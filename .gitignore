@@ -1,0 +1,19 @@
+# Rust 构建产物
+security_core/target/
+**/target/
+*.rs.bk
+
+# 工具链 / IDE / 编辑器元数据
+.omo/
+.codegraph
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 本地环境与密钥（严禁入库）
+.env
+.env.*
+*.pem
+*.key
