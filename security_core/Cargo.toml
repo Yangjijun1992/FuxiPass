@@ -1,0 +1,34 @@
+[package]
+name = "security_core"
+version = "0.1.0"
+edition = "2021"
+description = "安全密码管家 SecurityCore：Argon2id KDF + AES-256-GCM + KEK/DEK/RecoveryKey 分层密钥体系。对照 docs/01 架构规格与 docs/04 包裹格式。"
+license = "Apache-2.0 OR MIT"
+
+[dependencies]
+# argon2 仅用其底层哈希，禁用 password-hash/rand 默认特性（自行用 OsRng 生成 salt）。
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+# argon2 把 base64ct 声明为必选依赖；本机 rustc 1.75 无法编译 1.7+(需 1.81/edition2024)，
+# 故钉到支持 1.75 的 1.6.0。
+base64ct = "=1.6.0"
+aes-gcm = "0.10"
+base64 = "0.22"
+base32 = "0.5"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+zeroize = "~1.4"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+non_ascii_idents = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

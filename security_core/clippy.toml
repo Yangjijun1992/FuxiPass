@@ -1,0 +1,10 @@
+# 对照 cargo-strict.md：测试内允许 unwrap/expect/panic/dbg/print。
+# 非测试代码仍由 Cargo.toml [lints.clippy] 的 unwrap_used/expect_used/panic = deny 强制。
+
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+
+single-char-binding-names-threshold = 4
