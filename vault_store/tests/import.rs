@@ -88,3 +88,46 @@ fn empty_and_noise_text_yields_nothing() {
     assert!(parse_notes("").is_empty());
     assert!(parse_notes("----\n\n===\n").is_empty());
 }
+
+#[test]
+fn ignores_comment_lines_starting_with_hash() {
+    let text = "# 这是说明：不应被解析\n# 密码：假密码\n\n淘宝\n账号：u\n密码：p";
+    let all = parse_notes(text);
+    assert_eq!(all.len(), 1, "注释行不应产生候选");
+    assert_eq!(all[0].app_name.as_deref(), Some("淘宝"));
+    assert_eq!(all[0].login_password.as_deref(), Some("p"));
+}
+
+#[test]
+fn distinguishes_payment_secondary_and_api_key_fields() {
+    let c = first("中国银行\n账号：622425199202012358\n登录密码：LoginPw1\n二级密码：SecPw2\n支付密码：PayPw3\n密钥：sk-abc123");
+    assert_eq!(c.username.as_deref(), Some("622425199202012358"));
+    assert_eq!(c.login_password.as_deref(), Some("LoginPw1"));
+    assert_eq!(c.secondary_password.as_deref(), Some("SecPw2"));
+    assert_eq!(c.payment_password.as_deref(), Some("PayPw3"));
+    assert_eq!(c.api_key.as_deref(), Some("sk-abc123"));
+    assert!(c.issues.is_empty(), "issues={:?}", c.issues);
+}
+
+#[test]
+fn bank_card_password_maps_to_payment_slot() {
+    let c = first("杭州银行\n银行卡密码：012358");
+    assert_eq!(c.payment_password.as_deref(), Some("012358"));
+    assert!(c.login_password.is_none());
+}
+
+#[test]
+fn bracket_app_line_is_not_treated_as_username() {
+    let c = first("[DeepSeek API]\n密钥：sk-test");
+    assert_eq!(c.app_name.as_deref(), Some("DeepSeek API"));
+    assert!(c.username.is_none(), "括号行不应被当作账号");
+    assert_eq!(c.api_key.as_deref(), Some("sk-test"));
+}
+
+#[test]
+fn notes_only_entry_is_kept_with_missing_password_issue() {
+    let c = first("[待补录站点]\n备注：账号密码待补充");
+    assert_eq!(c.app_name.as_deref(), Some("待补录站点"));
+    assert!(c.issues.iter().any(|i| i.contains("缺少密码")));
+    assert!(c.issues.iter().any(|i| i.contains("缺少平台") == false));
+}
