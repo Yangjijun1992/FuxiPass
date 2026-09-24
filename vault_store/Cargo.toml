@@ -1,0 +1,27 @@
+[package]
+name = "vault_store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "安全密码管家数据层：SQLite 存储 + 字段级 AES-256-GCM 加密 + 账号卡片 Repository"
+
+[dependencies]
+security_core = { path = "../security_core" }
+base64 = "0.22"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+non_ascii_idents = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
