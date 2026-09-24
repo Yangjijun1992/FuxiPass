@@ -686,7 +686,10 @@ function renderImportTable() {
     grid.className = 'row';
     grid.style.marginTop = '8px';
     const specs = [
-      ['app_name', '平台名'], ['username', '账号'], ['login_password', '密码'], ['url', '网址']
+      ['app_name', '平台名'], ['username', '账号'],
+      ['login_password', '登录密码'], ['secondary_password', '二级密码'],
+      ['payment_password', '支付密码'], ['api_key', '密钥/API Key'],
+      ['url', '网址'],
     ];
     for (const [key, label] of specs) {
       const wrap = document.createElement('div');
