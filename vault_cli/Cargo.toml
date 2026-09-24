@@ -1,0 +1,22 @@
+[package]
+name = "vault_cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "安全密码管家离线运维 CLI：批量导入文本、查看统计"
+
+[dependencies]
+vault_store = { path = "../vault_store" }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+non_ascii_idents = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
