@@ -60,6 +60,32 @@ impl Vault {
             .flatten();
         Ok(hint)
     }
+
+    /// 重新生成恢复密钥（需已解锁）。返回新的显示串，**旧恢复密钥立即失效**。
+    pub fn regenerate_recovery_key(&self) -> Result<String, VaultError> {
+        let recovery = security_core::generate_recovery_key();
+        let recoverywrap = security_core::wrap_dek_via_recovery(&recovery, &self.dek)?;
+        self.conn.execute(
+            "UPDATE meta SET recoverywrap = ?1 WHERE id = 1",
+            params![serde_json::to_string(&recoverywrap)?],
+        )?;
+        self.record_audit("regenerate_recovery_key", None, None)?;
+        Ok(recovery.to_display())
+    }
+}
+
+/// 读取密码提示词（**无需解锁**：提示词以明文存于 meta，供解锁界面显示）。
+///
+/// 主密码遗忘时用户需要看到提示词，因此该读取不能依赖解锁会话。
+pub fn read_hint(path: &Path) -> Result<Option<String>, VaultError> {
+    if !path.exists() {
+        return Err(VaultError::NotInitialized);
+    }
+    let conn = open_connection(path)?;
+    let hint: Option<Option<String>> = conn
+        .query_row("SELECT hint FROM meta WHERE id = 1", [], |row| row.get(0))
+        .optional()?;
+    Ok(hint.flatten())
 }
 
 /// 打开数据库连接并启用外键约束（级联删除依赖此设置，每个连接都需开启）。

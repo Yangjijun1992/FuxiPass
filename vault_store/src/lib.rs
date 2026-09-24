@@ -12,14 +12,20 @@ pub mod accounts;
 pub mod accounts_read;
 pub mod audit;
 pub mod error;
+pub mod import;
 pub mod models;
 pub mod schema;
 pub mod util;
 pub mod vault;
 
 pub use error::VaultError;
+pub use import::{
+    candidate_to_input, parse_notes, ImportCandidate, ImportOutcome,
+};
 pub use models::{
     masked_preview, AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, Importance,
     SecretFieldView,
 };
-pub use vault::{initialize, recover, unlock, verify_master_password, InitResult, Vault};
+pub use vault::{
+    initialize, read_hint, recover, unlock, verify_master_password, InitResult, Vault,
+};
