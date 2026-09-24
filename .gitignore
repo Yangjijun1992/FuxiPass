@@ -22,3 +22,9 @@ security_core/target/
 *.vault.db
 *.vault.db-wal
 *.vault.db-shm
+
+# ===== 真实凭证（严禁入库）=====
+docs/account_list.txt
+private/
+*.secrets.*
+credentials*.txt
