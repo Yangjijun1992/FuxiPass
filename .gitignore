@@ -17,3 +17,8 @@ security_core/target/
 .env.*
 *.pem
 *.key
+
+# 本地保险库数据库（运行时生成，禁止入库）
+*.vault.db
+*.vault.db-wal
+*.vault.db-shm
