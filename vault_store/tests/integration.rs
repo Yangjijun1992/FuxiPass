@@ -338,17 +338,11 @@ fn import_reports_failed_item_without_aborting_others() {
             app_name: Some("有效站点".to_owned()),
             username: Some("u".to_owned()),
             login_password: Some("p".to_owned()),
-            url: None,
-            notes: None,
-            issues: Vec::new(),
+            ..Default::default()
         },
         vault_store::ImportCandidate {
             app_name: Some("   ".to_owned()),
-            username: None,
-            login_password: None,
-            url: None,
-            notes: None,
-            issues: Vec::new(),
+            ..Default::default()
         },
     ];
     let outcome = vault.import_candidates(&candidates);
