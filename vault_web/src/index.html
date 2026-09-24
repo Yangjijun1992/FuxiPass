@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>FuxiPass · 安全密码管家（本地验证）</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --panel-2: #1f2940;
+    --line: #2b3852; --fg: #e6ecf7; --muted: #8ea0bf; --accent: #4f8cff;
+    --danger: #ff5f6d; --ok: #34d399; --warn: #fbbf24; --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 28px 18px 80px; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .5px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 22px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea, select {
+    width: 100%; padding: 9px 11px; background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit;
+  }
+  input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); }
+  button {
+    padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--fg); cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button.ghost { background: transparent; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 13px 15px; margin-bottom: 9px; cursor: pointer; transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .name { font-weight: 600; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); margin-left: 6px;
+  }
+  .badge.hi { color: var(--warn); border-color: #6b5520; }
+  .field { border-top: 1px solid var(--line); padding: 11px 0; }
+  .field:first-child { border-top: none; }
+  .field .k { font-size: 12px; color: var(--muted); }
+  .field .v { font-size: 15px; word-break: break-all; }
+  .alert { border-radius: 10px; padding: 11px 13px; font-size: 13px; margin: 10px 0; }
+  .alert.warn { background: #3a2f12; border: 1px solid #6b5520; color: #fde68a; }
+  .alert.err { background: #3a1a1e; border: 1px solid #7f2c35; color: #ffc9cf; }
+  .alert.ok { background: #10301f; border: 1px solid #1f6b45; color: #a7f3d0; }
+  .hidden { display: none !important; }
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
+    align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto;
+  }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); width: 100%; max-width: 560px; padding: 20px; }
+  .audit-item { font-size: 12px; padding: 5px 0; border-top: 1px solid var(--line); }
+  .audit-item:first-child { border-top: none; }
+  .rk { word-break: break-all; font-size: 14px; letter-spacing: 1px; color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FuxiPass · 安全密码管家</h1>
+  <div class="sub">PC 端本地验证界面（仅监听 127.0.0.1）· 数据字段级 AES-256-GCM 加密落库</div>
+
+  <div id="msg"></div>
+
+  <!-- 未初始化 -->
+  <div id="view-init" class="panel hidden">
+    <h3 style="margin-top:0">创建新保险库</h3>
+    <p class="muted">首次使用，请设置主密码。主密码用于派生密钥，<b>不会上传、不会被存储</b>。</p>
+    <label>主密码（至少 8 位）</label>
+    <input id="init-pw" type="password" autocomplete="new-password">
+    <label>确认主密码</label>
+    <input id="init-pw2" type="password" autocomplete="new-password">
+    <div class="row" style="margin-top:14px">
+      <button class="primary" onclick="doInit()">创建保险库</button>
+    </div>
+    <div id="init-rk" class="hidden">
+      <div class="alert warn">
+        <b>请立即离线保存恢复密钥。</b>忘记主密码时，只有它能恢复数据；丢失则无法恢复。
+      </div>
+      <div class="rk mono" id="rk-value"></div>
+      <div class="row" style="margin-top:10px">
+        <button onclick="copyText(document.getElementById('rk-value').textContent)">复制恢复密钥</button>
+        <button class="primary" onclick="afterInit()">我已保存，开始使用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 锁定 -->
+  <div id="view-lock" class="panel hidden">
+    <h3 style="margin-top:0">解锁保险库</h3>
+    <div id="hint" class="muted hidden" style="margin-bottom:8px"></div>
+    <label>主密码</label>
+    <input id="unlock-pw" type="password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doUnlock()">
+    <div class="row" style="margin-top:14px">
+      <button class="primary" onclick="doUnlock()">解锁</button>
+      <button class="ghost" onclick="toggle('recover-box')">忘记主密码？用恢复密钥</button>
+    </div>
+    <div id="recover-box" class="hidden">
+      <label>恢复密钥</label>
+      <input id="recover-key" class="mono" placeholder="XXXX-XXXX-...">
+      <label>新主密码</label>
+      <input id="recover-pw" type="password" autocomplete="new-password">
+      <div class="row" style="margin-top:10px">
+        <button onclick="doRecover()">重置主密码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="view-main" class="hidden">
+    <div class="panel">
+      <div class="row">
+        <input id="search" class="grow" placeholder="搜索：平台名 / 网址 / 账号（如 建设 / ccb / zhangsan）"
+               oninput="doSearch()">
+        <button class="primary" onclick="openEditor(null)">＋ 新增账号</button>
+        <button onclick="toggleAudit()">审计</button>
+        <button class="ghost" onclick="doLock()">锁定</button>
+      </div>
+    </div>
+    <div id="list"></div>
+    <div id="audit-panel" class="panel hidden">
+      <h3 style="margin-top:0">审计日志（不含明文）</h3>
+      <div id="audit-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+let TOKEN = null;
+
+function toggle(id) { document.getElementById(id).classList.toggle('hidden'); }
+
+function msg(text, kind) {
+  const el = document.getElementById('msg');
+  el.innerHTML = '';
+  if (!text) return;
+  const d = document.createElement('div');
+  d.className = 'alert ' + (kind || 'ok');
+  d.textContent = text;
+  el.appendChild(d);
+  if (kind !== 'err') setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (TOKEN) headers['X-Session-Token'] = TOKEN;
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const m = data && data.error ? data.error.message : res.statusText;
+    throw new Error(m);
+  }
+  return data;
+}
+
+async function refresh() {
+  const s = await api('/api/status');
+  show(s.initialized ? (s.unlocked ? 'main' : 'lock') : 'init');
+  if (s.initialized && !s.unlocked) {
+    try {
+      const h = await api('/api/hint');
+      const el = document.getElementById('hint');
+      if (h.hint) { el.textContent = '密码提示词：' + h.hint; el.classList.remove('hidden'); }
+    } catch (e) { /* 忽略 */ }
+  }
+  if (s.unlocked) await doSearch();
+}
+
+function show(view) {
+  for (const v of ['init', 'lock', 'main']) {
+    document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
+  }
+}
+
+async function doInit() {
+  const pw = document.getElementById('init-pw').value;
+  const pw2 = document.getElementById('init-pw2').value;
+  if (pw.length < 8) return msg('主密码至少 8 位', 'err');
+  if (pw !== pw2) return msg('两次输入的主密码不一致', 'err');
+  try {
+    const r = await api('/api/initialize', { method: 'POST', body: JSON.stringify({ master_password: pw }) });
+    document.getElementById('rk-value').textContent = r.recovery_key;
+    document.getElementById('init-rk').classList.remove('hidden');
+  } catch (e) { msg('创建失败：' + e.message, 'err'); }
+}
+
+async function afterInit() {
+  await refresh();
+}
+
+async function doUnlock() {
+  const pw = document.getElementById('unlock-pw').value;
+  try {
+    const r = await api('/api/unlock', { method: 'POST', body: JSON.stringify({ master_password: pw }) });
+    TOKEN = r.token;
+    document.getElementById('unlock-pw').value = '';
+    msg('');
+    await refresh();
+  } catch (e) { msg('解锁失败：' + e.message, 'err'); }
+}
+
+async function doLock() {
+  try { await api('/api/lock', { method: 'POST' }); } catch (e) { /* 已锁定 */ }
+  TOKEN = null;
+  await refresh();
+}
+
+async function doRecover() {
+  const key = document.getElementById('recover-key').value;
+  const pw = document.getElementById('recover-pw').value;
+  if (pw.length < 8) return msg('新主密码至少 8 位', 'err');
+  try {
+    await api('/api/recover', { method: 'POST', body: JSON.stringify({ recovery_key: key, new_master_password: pw }) });
+    msg('主密码已重置，请用新主密码解锁');
+    document.getElementById('recover-key').value = '';
+    document.getElementById('recover-pw').value = '';
+    await refresh();
+  } catch (e) { msg('恢复失败：' + e.message, 'err'); }
+}
+
+const FIELD_LABEL = {
+  login_password: '登录密码', secondary_password: '二级密码',
+  payment_password: '支付密码', api_key: 'API Key', private_key: '私钥', totp: 'TOTP 密钥'
+};
+
+async function doSearch() {
+  const q = document.getElementById('search').value;
+  try {
+    const items = await api('/api/accounts?q=' + encodeURIComponent(q));
+    renderList(items);
+  } catch (e) { msg('查询失败：' + e.message, 'err'); }
+}
+
+function renderList(items) {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  if (!items.length) {
+    const d = document.createElement('div');
+    d.className = 'panel muted';
+    d.textContent = '没有匹配的账号。点击「＋ 新增账号」创建。';
+    list.appendChild(d);
+    return;
+  }
+  for (const it of items) {
+    const c = document.createElement('div');
+    c.className = 'card';
+    c.onclick = () => openDetail(it.id);
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = it.app_name;
+    for (const ft of it.field_types) {
+      const b = document.createElement('span');
+      const hi = (ft !== 'login_password');
+      b.className = 'badge' + (hi ? ' hi' : '');
+      b.textContent = FIELD_LABEL[ft] || ft;
+      name.appendChild(b);
+    }
+    c.appendChild(name);
+
+    const meta = document.createElement('div');
+    meta.className = 'muted';
+    meta.style.fontSize = '12px';
+    meta.textContent = (it.username || '—') + (it.url ? ' · ' + it.url : '');
+    c.appendChild(meta);
+
+    list.appendChild(c);
+  }
+}
+
+async function openDetail(id) {
+  try {
+    const d = await api('/api/accounts/' + encodeURIComponent(id));
+    const root = document.getElementById('modal-root');
+    root.innerHTML = '';
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.onclick = (ev) => { if (ev.target === bg) root.innerHTML = ''; };
+
+    const m = document.createElement('div');
+    m.className = 'modal';
+
+    const h = document.createElement('h3');
+    h.style.marginTop = '0';
+    h.textContent = d.app_name;
+    m.appendChild(h);
+
+    m.appendChild(fieldRow('登录账号', d.username || '—', null));
+    m.appendChild(fieldRow('网址', d.url || '—', null));
+    m.appendChild(fieldRow('备注', d.notes || '—', null));
+
+    for (const s of d.secrets) {
+      const row = document.createElement('div');
+      row.className = 'field';
+      const k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = (FIELD_LABEL[s.field_type] || s.field_type) +
+        (s.requires_second_factor ? '（极高敏感 · 需二次验证）' : '');
+      const v = document.createElement('div');
+      v.className = 'v mono';
+      v.textContent = s.masked_preview;
+      row.appendChild(k); row.appendChild(v);
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'row';
+      btnRow.style.marginTop = '8px';
+      const revealBtn = document.createElement('button');
+      revealBtn.textContent = '🔑 解锁查看';
+      revealBtn.onclick = () => revealField(id, s.field_type, v);
+      btnRow.appendChild(revealBtn);
+      row.appendChild(btnRow);
+      m.appendChild(row);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'row';
+    actions.style.marginTop = '16px';
+    const edit = document.createElement('button');
+    edit.textContent = '编辑';
+    edit.onclick = () => { root.innerHTML = ''; openEditor(d); };
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = '删除';
+    del.onclick = async () => {
+      if (!confirm('确认删除「' + d.app_name + '」？')) return;
+      await api('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
+      root.innerHTML = '';
+      await doSearch();
+      msg('已删除');
+    };
+    const close = document.createElement('button');
+    close.className = 'ghost';
+    close.textContent = '关闭';
+    close.onclick = () => { root.innerHTML = ''; };
+    actions.appendChild(edit); actions.appendChild(del); actions.appendChild(close);
+    m.appendChild(actions);
+
+    bg.appendChild(m);
+    root.appendChild(bg);
+  } catch (e) { msg('加载详情失败：' + e.message, 'err'); }
+}
+
+function fieldRow(k, v, extra) {
+  const row = document.createElement('div');
+  row.className = 'field';
+  const kk = document.createElement('div'); kk.className = 'k'; kk.textContent = k;
+  const vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v;
+  row.appendChild(kk); row.appendChild(vv);
+  if (extra) row.appendChild(extra);
+  return row;
+}
+
+async function revealField(id, fieldType, targetEl) {
+  const pw = prompt('二次验证：请输入主密码');
+  if (pw === null) return;
+  try {
+    const r = await api('/api/reveal', {
+      method: 'POST',
+      body: JSON.stringify({ account_id: id, field_type: fieldType, master_password: pw })
+    });
+    targetEl.textContent = r.value;
+    msg('已解锁查看（操作已记入审计）');
+  } catch (e) { msg('二次验证失败：' + e.message, 'err'); }
+}
+
+function openEditor(existing) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = '';
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.onclick = (ev) => { if (ev.target === bg) root.innerHTML = ''; };
+  const m = document.createElement('div');
+  m.className = 'modal';
+  const isEdit = !!existing;
+
+  const h = document.createElement('h3');
+  h.style.marginTop = '0';
+  h.textContent = isEdit ? '编辑账号' : '新增账号';
+  m.appendChild(h);
+
+  const inputs = {};
+  const fields = [
+    ['app_name', '应用/网站名称 *'],
+    ['url', '网址 / 应用包名'],
+    ['username', '账号 / 用户名'],
+    ['notes', '备注（密保答案等）'],
+    ['login_password', '登录密码'],
+    ['secondary_password', '二级密码'],
+    ['payment_password', '支付密码'],
+    ['api_key', 'API Key / 密钥'],
+  ];
+  for (const [key, label] of fields) {
+    const l = document.createElement('label'); l.textContent = label;
+    const i = document.createElement('input');
+    if (key.includes('password') || key === 'api_key') i.type = 'password';
+    if (isEdit) i.placeholder = '（留空则不修改/清空）';
+    m.appendChild(l); m.appendChild(i);
+    inputs[key] = i;
+  }
+  const l = document.createElement('label'); l.textContent = '分类';
+  const sel = document.createElement('select');
+  for (const [v, t] of [['common','常用'],['finance','金融银行'],['low_frequency','低频备用'],['social','社交']]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
+  }
+  if (isEdit) sel.value = existing.importance || 'common';
+  m.appendChild(l); m.appendChild(sel);
+
+  const row = document.createElement('div');
+  row.className = 'row'; row.style.marginTop = '16px';
+  const save = document.createElement('button');
+  save.className = 'primary';
+  save.textContent = '保存';
+  save.onclick = async () => {
+    const body = { importance: sel.value };
+    for (const k in inputs) body[k] = inputs[k].value || null;
+    if (!body.app_name) return msg('应用/网站名称必填', 'err');
+    try {
+      if (isEdit) {
+        await api('/api/accounts/' + encodeURIComponent(existing.id), { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await api('/api/accounts', { method: 'POST', body: JSON.stringify(body) });
+      }
+      root.innerHTML = '';
+      await doSearch();
+      msg(isEdit ? '已更新' : '已创建');
+    } catch (e) { msg('保存失败：' + e.message, 'err'); }
+  };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = '取消';
+  cancel.onclick = () => { root.innerHTML = ''; };
+  row.appendChild(save); row.appendChild(cancel);
+  m.appendChild(row);
+
+  bg.appendChild(m); root.appendChild(bg);
+}
+
+async function toggleAudit() {
+  const panel = document.getElementById('audit-panel');
+  panel.classList.toggle('hidden');
+  if (panel.classList.contains('hidden')) return;
+  try {
+    const items = await api('/api/audit');
+    const box = document.getElementById('audit-list');
+    box.innerHTML = '';
+    if (!items.length) { box.textContent = '暂无记录'; return; }
+    for (const it of items) {
+      const d = document.createElement('div');
+      d.className = 'audit-item mono';
+      const ts = new Date(Number(it.ts));
+      d.textContent = `${ts.toLocaleString()} · ${it.operation}` +
+        (it.field_category ? ` · ${FIELD_LABEL[it.field_category] || it.field_category}` : '') +
+        (it.account_id ? ` · ${it.account_id}` : '');
+      box.appendChild(d);
+    }
+  } catch (e) { msg('审计查询失败：' + e.message, 'err'); }
+}
+
+function copyText(t) {
+  navigator.clipboard.writeText(t).then(() => msg('已复制（生产版将 30 秒自动清空）'))
+    .catch(() => msg('复制失败，请手动选择复制', 'err'));
+}
+
+document.getElementById('unlock-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); });
+refresh();
+</script>
+</body>
+</html>
