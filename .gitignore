@@ -28,3 +28,12 @@ docs/account_list.txt
 private/
 *.secrets.*
 credentials*.txt
+
+# ===== 数据库文件（保险库绝不可入库/推送）=====
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlcipher
