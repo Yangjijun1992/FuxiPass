@@ -899,6 +899,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault_cli"
+version = "0.1.0"
+dependencies = [
+ "vault_store",
+]
+
+[[package]]
 name = "vault_store"
 version = "0.1.0"
 dependencies = [
