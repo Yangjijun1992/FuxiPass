@@ -15,12 +15,14 @@ pub mod cipher;
 pub mod error;
 pub mod kdf;
 pub mod keys;
+pub mod seal;
 pub mod vault;
 pub mod wrap;
 
 pub use error::SecurityError;
 pub use kdf::KdfParams;
 pub use keys::{AccountKey, Dek, Kek, RecoveryKey};
+pub use seal::{open as open_sealed, seal};
 pub use vault::{
     change_master_password, derive_kek, generate_dek, generate_recovery_key, recover_and_reset,
     unwrap_dek, unwrap_dek_via_recovery, wrap_dek, wrap_dek_via_recovery,
