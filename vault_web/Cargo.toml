@@ -1,0 +1,33 @@
+[package]
+name = "vault_web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "安全密码管家 PC 端本地 Web 验证界面（仅监听 127.0.0.1）"
+
+[dependencies]
+vault_store = { path = "../vault_store" }
+security_core = { path = "../security_core" }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror.workspace = true
+
+[[bin]]
+name = "vault_web"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+non_ascii_idents = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
