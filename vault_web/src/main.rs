@@ -36,6 +36,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let protected = Router::new()
         .route("/api/lock", post(api::lock))
+        .route("/api/settings/hint", post(api::set_hint))
+        .route(
+            "/api/recovery-key/regenerate",
+            post(api::regenerate_recovery_key),
+        )
+        .route("/api/import/parse", post(api::import_parse))
+        .route("/api/import/commit", post(api::import_commit))
         .route(
             "/api/accounts",
             get(api::list_accounts).post(api::create_account),
