@@ -130,8 +130,60 @@
         <input id="search" class="grow" placeholder="搜索：平台名 / 网址 / 账号（如 建设 / ccb / zhangsan）"
                oninput="doSearch()">
         <button class="primary" onclick="openEditor(null)">＋ 新增账号</button>
+        <button onclick="openImport()">导入文本</button>
+        <button onclick="openSettings()">设置</button>
         <button onclick="toggleAudit()">审计</button>
         <button class="ghost" onclick="doLock()">锁定</button>
+      </div>
+    </div>
+
+    <!-- 智能导入面板（T2.6/T2.7） -->
+    <div id="import-panel" class="panel hidden">
+      <h3 style="margin-top:0">智能导入（QQ 记事本 / 备忘录文本）</h3>
+      <p class="muted">粘贴历史记录文本，自动识别「平台 / 账号 / 密码 / 网址 / 备注」。支持
+        <span class="mono">标签式</span>、<span class="mono">单行内联</span>、<span class="mono">【平台名】</span>
+        及空行 / <span class="mono">---</span> 分段。</p>
+      <textarea id="import-text" rows="8" placeholder="淘宝&#10;账号：zhangsan&#10;密码：Taobao#2024&#10;&#10;---&#10;&#10;京东 账号：jd_user 密码：Jd#2024"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" onclick="doParseImport()">解析预览</button>
+        <button class="ghost" onclick="toggle('import-panel')">收起</button>
+      </div>
+      <div id="import-preview"></div>
+    </div>
+
+    <!-- 设置面板（T1.9 / T1.10） -->
+    <div id="settings-panel" class="panel hidden">
+      <h3 style="margin-top:0">安全设置</h3>
+
+      <label>密码提示词（解锁失败时显示）</label>
+      <p class="muted" style="margin:4px 0 8px">
+        ⚠️ 提示词需在<b>解锁前</b>可见，因此<b>以明文保存</b>（不加密）。
+        请只写记忆线索，<b>切勿写入密码本身或密码片段</b>。
+      </p>
+      <div class="row">
+        <input id="hint-input" class="grow" placeholder="例如：常用颜色 + 纪念日">
+        <button onclick="saveHint()">保存提示词</button>
+      </div>
+
+      <label style="margin-top:18px">恢复密钥（Recovery Key）</label>
+      <p class="muted" style="margin:4px 0 8px">用于忘记主密码时重置。<b>旧密钥在重新生成后立即失效。</b></p>
+      <div class="row">
+        <button onclick="doRegenerateRecoveryKey()">重新生成恢复密钥</button>
+      </div>
+      <div id="new-rk" class="hidden">
+        <div class="alert warn" style="margin-top:10px">
+          请立即离线保存。此密钥仅显示一次，关闭后无法再次查看。
+        </div>
+        <div class="rk mono" id="new-rk-value"></div>
+        <div class="row" style="margin-top:10px">
+          <button onclick="copyWithClear(document.getElementById('new-rk-value').textContent, true)">复制</button>
+          <button onclick="printRecoveryKey(document.getElementById('new-rk-value').textContent)">打印</button>
+          <button class="ghost" onclick="document.getElementById('new-rk').classList.add('hidden')">我已保存</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:18px">
+        <button class="ghost" onclick="toggle('settings-panel')">收起</button>
       </div>
     </div>
     <div id="list"></div>
@@ -305,9 +357,9 @@ async function openDetail(id) {
     h.textContent = d.app_name;
     m.appendChild(h);
 
-    m.appendChild(fieldRow('登录账号', d.username || '—', null));
-    m.appendChild(fieldRow('网址', d.url || '—', null));
-    m.appendChild(fieldRow('备注', d.notes || '—', null));
+    m.appendChild(copyRow('登录账号', d.username || '—', d.username, false));
+    m.appendChild(copyRow('网址', d.url || '—', d.url, false));
+    m.appendChild(copyRow('备注', d.notes || '—', d.notes, false));
 
     for (const s of d.secrets) {
       const row = document.createElement('div');
@@ -370,6 +422,25 @@ function fieldRow(k, v, extra) {
   return row;
 }
 
+function copyRow(k, display, copyValue, sensitive) {
+  const row = document.createElement('div');
+  row.className = 'field';
+  const kk = document.createElement('div'); kk.className = 'k'; kk.textContent = k;
+  const vv = document.createElement('div'); vv.className = 'v'; vv.textContent = display;
+  row.appendChild(kk); row.appendChild(vv);
+  if (copyValue) {
+    const btnRow = document.createElement('div');
+    btnRow.className = 'row';
+    btnRow.style.marginTop = '6px';
+    const btn = document.createElement('button');
+    btn.textContent = sensitive ? '复制（高敏感）' : '复制';
+    btn.onclick = () => copyWithClear(copyValue, sensitive);
+    btnRow.appendChild(btn);
+    row.appendChild(btnRow);
+  }
+  return row;
+}
+
 async function revealField(id, fieldType, targetEl) {
   const pw = prompt('二次验证：请输入主密码');
   if (pw === null) return;
@@ -379,6 +450,15 @@ async function revealField(id, fieldType, targetEl) {
       body: JSON.stringify({ account_id: id, field_type: fieldType, master_password: pw })
     });
     targetEl.textContent = r.value;
+    const holder = targetEl.parentElement;
+    if (holder && !holder.querySelector('.copy-revealed')) {
+      const btn = document.createElement('button');
+      btn.className = 'copy-revealed';
+      btn.style.marginTop = '8px';
+      btn.textContent = '复制（高敏感 · 30 秒后清空）';
+      btn.onclick = () => copyWithClear(r.value, true);
+      holder.appendChild(btn);
+    }
     msg('已解锁查看（操作已记入审计）');
   } catch (e) { msg('二次验证失败：' + e.message, 'err'); }
 }
@@ -479,6 +559,188 @@ async function toggleAudit() {
 function copyText(t) {
   navigator.clipboard.writeText(t).then(() => msg('已复制（生产版将 30 秒自动清空）'))
     .catch(() => msg('复制失败，请手动选择复制', 'err'));
+}
+
+/* ---------- 剪贴板策略（T1.8） ---------- */
+let clipboardTimer = null;
+async function copyWithClear(text, sensitive) {
+  if (!text) return;
+  if (sensitive) {
+    const ok = confirm('该字段为高敏感信息。\n\n剪贴板是系统级共享通道，其他程序可能读取其内容。\n复制后将在 30 秒后自动清空。是否继续？');
+    if (!ok) return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    if (clipboardTimer) clearTimeout(clipboardTimer);
+    clipboardTimer = setTimeout(async () => {
+      try {
+        await navigator.clipboard.writeText('');
+        clipboardTimer = null;
+        msg('剪贴板已自动清空');
+      } catch (e) { /* 浏览器拒绝时忽略 */ }
+    }, 30000);
+    msg(sensitive ? '已复制高敏感字段（30 秒后自动清空）' : '已复制（30 秒后自动清空）');
+  } catch (e) {
+    msg('复制失败：' + e.message + '（可手动选择复制）', 'err');
+  }
+}
+
+/* ---------- 安全设置（T1.9 / T1.10） ---------- */
+async function openSettings() {
+  const panel = document.getElementById('settings-panel');
+  panel.classList.toggle('hidden');
+  if (panel.classList.contains('hidden')) return;
+  try {
+    const h = await api('/api/hint');
+    document.getElementById('hint-input').value = h.hint || '';
+  } catch (e) { /* 忽略 */ }
+}
+
+async function saveHint() {
+  const v = document.getElementById('hint-input').value.trim();
+  if (v && !confirm('提示词将以明文保存（解锁前需可见），任何拿到数据库文件的人都能读到它。\n\n请确认其中不含密码本身或密码片段。是否继续？')) return;
+  try {
+    await api('/api/settings/hint', { method: 'POST', body: JSON.stringify({ hint: v || null }) });
+    msg(v ? '提示词已保存（解锁失败时会显示）' : '提示词已清除');
+  } catch (e) { msg('保存失败：' + e.message, 'err'); }
+}
+
+async function doRegenerateRecoveryKey() {
+  const pw = prompt('二次验证：请输入主密码以重新生成恢复密钥');
+  if (pw === null) return;
+  try {
+    const r = await api('/api/recovery-key/regenerate', {
+      method: 'POST', body: JSON.stringify({ master_password: pw })
+    });
+    document.getElementById('new-rk-value').textContent = r.recovery_key;
+    document.getElementById('new-rk').classList.remove('hidden');
+    msg('已生成新恢复密钥，旧密钥立即失效');
+  } catch (e) { msg('生成失败：' + e.message, 'err'); }
+}
+
+function printRecoveryKey(key) {
+  const safe = String(key).replace(/[^A-Za-z0-9-]/g, '');
+  const w = window.open('', '_blank');
+  if (!w) return msg('浏览器拦截了弹窗，请允许后重试', 'err');
+  w.document.write('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
+    '<title>FuxiPass 恢复密钥</title></head><body style="font-family:sans-serif;padding:40px">' +
+    '<h2>FuxiPass 恢复密钥</h2>' +
+    '<p>请打印后离线妥善保存。忘记主密码时可用它重置；丢失则无法恢复数据。</p>' +
+    '<div style="font-family:monospace;font-size:18px;letter-spacing:1px;border:1px dashed #888;padding:16px;word-break:break-all">' +
+    safe + '</div>' +
+    '<p style="color:#888;font-size:12px">打印时间：' + new Date().toLocaleString() + '</p>' +
+    '</body></html>');
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
+/* ---------- 智能导入（T2.6 / T2.7） ---------- */
+let importCandidates = [];
+
+function openImport() {
+  toggle('import-panel');
+  document.getElementById('import-preview').innerHTML = '';
+}
+
+async function doParseImport() {
+  const text = document.getElementById('import-text').value;
+  if (!text.trim()) return msg('请先粘贴文本', 'err');
+  try {
+    const r = await api('/api/import/parse', { method: 'POST', body: JSON.stringify({ text }) });
+    importCandidates = r.candidates;
+    renderImportTable();
+  } catch (e) { msg('解析失败：' + e.message, 'err'); }
+}
+
+function renderImportTable() {
+  const box = document.getElementById('import-preview');
+  box.innerHTML = '';
+  if (!importCandidates.length) {
+    box.innerHTML = '<div class="alert warn">未解析出可导入的账号，请检查文本格式。</div>';
+    return;
+  }
+  const head = document.createElement('div');
+  head.className = 'muted';
+  head.style.margin = '12px 0 6px';
+  head.textContent = `解析出 ${importCandidates.length} 条，请核对后可编辑再导入：`;
+  box.appendChild(head);
+
+  importCandidates.forEach((c, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cursor = 'default';
+
+    const title = document.createElement('div');
+    title.className = 'name';
+    title.textContent = '#' + (idx + 1) + ' ' + (c.app_name || '（缺少平台名）');
+    if (c.issues && c.issues.length) {
+      const b = document.createElement('span');
+      b.className = 'badge hi';
+      b.textContent = c.issues.join('；');
+      title.appendChild(b);
+    }
+    card.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'row';
+    grid.style.marginTop = '8px';
+    const specs = [
+      ['app_name', '平台名'], ['username', '账号'], ['login_password', '密码'], ['url', '网址']
+    ];
+    for (const [key, label] of specs) {
+      const wrap = document.createElement('div');
+      wrap.style.flex = '1 1 160px';
+      const l = document.createElement('label'); l.textContent = label;
+      const i = document.createElement('input');
+      i.value = c[key] || '';
+      i.oninput = () => { importCandidates[idx][key] = i.value || null; };
+      wrap.appendChild(l); wrap.appendChild(i);
+      grid.appendChild(wrap);
+    }
+    card.appendChild(grid);
+
+    const actions = document.createElement('div');
+    actions.className = 'row';
+    actions.style.marginTop = '6px';
+    const rm = document.createElement('button');
+    rm.className = 'danger';
+    rm.textContent = '移除此条';
+    rm.onclick = () => { importCandidates.splice(idx, 1); renderImportTable(); };
+    actions.appendChild(rm);
+    card.appendChild(actions);
+
+    box.appendChild(card);
+  });
+
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '12px';
+  const commit = document.createElement('button');
+  commit.className = 'primary';
+  commit.textContent = '确认导入（需主密码二次验证）';
+  commit.onclick = doCommitImport;
+  row.appendChild(commit);
+  box.appendChild(row);
+}
+
+async function doCommitImport() {
+  if (!importCandidates.length) return;
+  const pw = prompt('二次验证：请输入主密码以确认导入');
+  if (pw === null) return;
+  try {
+    const r = await api('/api/import/commit', {
+      method: 'POST',
+      body: JSON.stringify({ candidates: importCandidates, master_password: pw })
+    });
+    let m = `导入完成：成功 ${r.imported} 条`;
+    if (r.failed && r.failed.length) m += `，失败 ${r.failed.length} 条（${r.failed.join('；')}）`;
+    msg(m, r.failed && r.failed.length ? 'warn' : 'ok');
+    importCandidates = [];
+    document.getElementById('import-preview').innerHTML = '';
+    document.getElementById('import-text').value = '';
+    await doSearch();
+  } catch (e) { msg('导入失败：' + e.message, 'err'); }
 }
 
 document.getElementById('unlock-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); });
