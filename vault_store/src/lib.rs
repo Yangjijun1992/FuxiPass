@@ -19,6 +19,8 @@ pub mod import_parse;
 pub mod lockout;
 pub mod models;
 pub mod schema;
+pub mod secure_store;
+pub mod session;
 pub mod util;
 pub mod vault;
 
@@ -31,6 +33,8 @@ pub use models::{
     masked_preview, AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, Importance,
     SecretFieldView,
 };
+pub use secure_store::{PlatformError, SecureStore, ACCOUNT_KEY_ID};
+pub use session::{Session, SessionError, SessionPolicy, UnlockMethod};
 pub use vault::{
     initialize, read_hint, recover, unlock, verify_master_password, InitResult, Vault,
 };
