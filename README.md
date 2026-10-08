@@ -15,13 +15,14 @@
 | :-- | :-- | :-- |
 | 需求与设计文档 | ✅ 完成 | PRD V2.0 + 架构规格 + 任务清单 + 验收用例 + 接口定义 + ADR |
 | `security_core`（加密核心） | ✅ 完成 | Argon2id / AES-256-GCM / 分层密钥 / 包裹 / 恢复 |
-| `vault_store`（数据层） | ✅ 完成 | SQLite + 字段级加密 + 卡片 CRUD/检索/审计 + **智能导入解析** |
-| `vault_web`（PC 验证界面） | ✅ 完成 | 解锁/检索/增删/二次验证/审计 + **提示词 + 恢复码轮换 + 智能导入 + 剪贴板策略** |
+| `vault_store`（数据层） | ✅ 完成 | SQLite + 字段级加密 + 卡片 CRUD/检索/审计 + 智能导入 + **防爆破锁定 + 加密备份** |
+| `vault_web`（PC 验证界面） | ✅ 完成 | 解锁/检索/增删/二次验证/审计 + 提示词 + 恢复码轮换 + 智能导入 + 剪贴板策略 + **备份/迁移** |
+| `vault_cli`（离线运维） | ✅ 完成 | 批量导入 / 列表 / **导出备份 / 导入备份 / 修改主密码** |
 | 移动端 App（Flutter + 原生） | ⬜ 未开始 | 需 Flutter / Android SDK / Xcode 工具链 |
 | 服务端（可选找回通道） | ⬜ 未开始 | 零知识设计已就绪（docs/04） |
 
-**测试**：68 项全绿（含「凭证字段无明文」安全断言）。
-**任务进度**：Phase 1 基本完成（T1.1–T1.3、T1.6、T1.8–T1.10 及其依赖）、Phase 2 的 T2.6/T2.7 提前完成。
+**测试**：89 项全绿（含「凭证字段无明文」「备份文件无明文」「20 次输错后数据完好」等红线断言）。
+**任务进度**：Phase 1 基本完成、Phase 2 的 T2.1/T2.3/T2.6/T2.7/T2.8 完成、Phase 3 的 T3.6（加密备份）完成。
 
 ---
 
@@ -57,7 +58,7 @@ FuxiPass/
 ### 一、运行测试
 
 ```bash
-cargo test          # 68 项：security_core(33+9) + vault_store(10+16)
+cargo test          # 89 项：security_core(42) + vault_store(47)
 ```
 
 ### 二、加密核心演示（无界面）
@@ -69,7 +70,22 @@ cargo run --example vault_demo
 
 输出密钥包裹 JSON、恢复密钥显示串，并验证「解锁 / 恢复 / 改密」三种流程。
 
-### 三、PC 端 Web 验证界面（推荐）
+### 三、离线运维 CLI
+
+```bash
+# 批量导入文本
+cargo run -p vault_cli -- import --db ./fuxipass.vault.db --text private/account_list.normalized.txt
+
+# 导出 / 恢复加密备份（换机迁移）
+cargo run -p vault_cli -- export        --db ./fuxipass.vault.db --out backup.json
+cargo run -p vault_cli -- import-backup --db ./new-vault.db     --in  backup.json
+
+# 修改主密码（仅重包 DEK，不重加密数据）
+cargo run -p vault_cli -- change-password --db ./fuxipass.vault.db
+```
+所有口令建议通过 `--password-file` 传入，避免终端回显与 shell 历史留痕。
+
+### 四、PC 端 Web 验证界面（推荐）
 
 ```bash
 # 首次运行：创建演示库并写入示例账号（会打印恢复密钥，请保存）
@@ -95,6 +111,8 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | **智能导入** | 粘贴 QQ 记事本/备忘录文本 → 自动解析 → 可编辑预览 → 二次验证后批量入库 |
 | 新增 / 编辑 / 删除 | 完整卡片 CRUD |
 | 审计日志 | 记录操作与字段类别，**不含任何明文** |
+| **防爆破锁定** | 连续输错 5 次锁 5 分钟并指数退避至 30 分钟上限；界面显示倒计时；**绝不删除数据** |
+| **备份 / 迁移** | 导出为口令加密文件（无明文）；新机器一键导入恢复 |
 
 > ⚠️ 仅供本地验证：服务仅绑定 `127.0.0.1`。生产形态为移动端 App（见 docs/01）。
 
@@ -146,8 +164,8 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | Phase | 内容 | 状态 |
 | :-- | :-- | :-- |
 | **P1** 安全底座 | 密钥体系、加密核心、存储与 CRUD、提示词/恢复码、剪贴板 | ✅ PC 端完成 |
-| **P2** 分级鉴权 / 找回 / 导入 | 二次验证、邮箱短信找回、QQ 记事本解析 | 🔶 二次验证 + 智能导入已完成；邮箱短信找回待服务端 |
-| **P3** 抓取与系统集成 | 登录页抓取、AutoFill、加密备份导出恢复 | ⬜ |
+| **P2** 分级鉴权 / 找回 / 导入 | 二次验证、防爆破、邮箱短信找回、文本解析 | 🔶 二次验证 + 防爆破 + 文本解析已完成；邮箱短信找回待服务端 |
+| **P3** 抓取与系统集成 | 登录页抓取、AutoFill、加密备份导出恢复 | 🔶 **加密备份已完成**；抓取/AutoFill 需移动端 |
 | **P4** 加固与审计 | 防截图、剪贴板强化、审计日志、PIPL 合规 | ⬜ |
 
 ---
