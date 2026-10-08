@@ -160,3 +160,64 @@ fn hint_is_plaintext_by_design_while_credentials_stay_encrypted() {
     // 提示词按设计为明文（ADR-012），此断言用于把该设计意图固化。
     assert!(contains("记忆线索-非密码".as_bytes()));
 }
+
+#[test]
+fn data_summary_reports_counts() {
+    let (_tv, vault, _rk) = bootstrapped();
+    let _ = vault.create_account(&sample_input()).unwrap();
+    let s = vault.data_summary().unwrap();
+    assert_eq!(s.accounts, 1);
+    assert_eq!(s.secret_fields, 2, "样例含登录+二级密码");
+    assert!(s.audit_entries >= 1);
+}
+
+#[test]
+fn purge_all_accounts_removes_data_but_keeps_vault_usable() {
+    let (tv, vault, _rk) = bootstrapped();
+    let _ = vault.create_account(&sample_input()).unwrap();
+    assert_eq!(vault.list_accounts().unwrap().len(), 1);
+
+    let removed = vault.purge_all_accounts().unwrap();
+    assert_eq!(removed, 1);
+    assert_eq!(vault.list_accounts().unwrap().len(), 0);
+    assert_eq!(vault.data_summary().unwrap().secret_fields, 0, "字段应级联清除");
+    drop(vault);
+
+    // 库仍可用：主密码不变、结构完好
+    let vault = unlock(tv.path(), common::MASTER).unwrap();
+    assert_eq!(vault.list_accounts().unwrap().len(), 0);
+    assert!(vault
+        .list_audit(20)
+        .unwrap()
+        .iter()
+        .any(|e| e.operation == "purge_all_accounts"));
+}
+
+#[test]
+fn audit_can_be_filtered_by_operation() {
+    let (_tv, vault, _rk) = bootstrapped();
+    let id = vault.create_account(&sample_input()).unwrap();
+    let _ = vault.reveal_secret(&id, FieldType::LoginPassword).unwrap();
+
+    let reveals = vault.list_audit_filtered(50, Some("reveal_secret")).unwrap();
+    assert!(!reveals.is_empty());
+    assert!(reveals.iter().all(|e| e.operation == "reveal_secret"));
+
+    let creates = vault.list_audit_filtered(50, Some("create_account")).unwrap();
+    assert!(creates.iter().all(|e| e.operation == "create_account"));
+
+    let all = vault.list_audit_filtered(50, None).unwrap();
+    assert!(all.len() >= reveals.len() + creates.len());
+}
+
+#[test]
+fn purge_audit_logs_clears_history() {
+    let (_tv, vault, _rk) = bootstrapped();
+    let _ = vault.create_account(&sample_input()).unwrap();
+    assert!(vault.data_summary().unwrap().audit_entries > 0);
+
+    let removed = vault.purge_audit_logs().unwrap();
+    assert!(removed > 0);
+    let after = vault.data_summary().unwrap().audit_entries;
+    assert_eq!(after, 1, "清空后仅保留本次『清空』自身的记录");
+}
