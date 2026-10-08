@@ -13,6 +13,7 @@ pub mod accounts_read;
 pub mod audit;
 pub mod error;
 pub mod import;
+pub mod lockout;
 pub mod import_parse;
 pub mod models;
 pub mod schema;
@@ -20,6 +21,7 @@ pub mod util;
 pub mod vault;
 
 pub use error::VaultError;
+pub use lockout::{lock_status, LockStatus};
 pub use import::{
     candidate_to_input, parse_notes, ImportCandidate, ImportOutcome,
 };

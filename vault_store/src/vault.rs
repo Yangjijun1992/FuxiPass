@@ -8,8 +8,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use security_core::{Dek, KdfParams, RecoveryKey, Wrap};
 
 use crate::error::VaultError;
+use crate::lockout;
 use crate::schema::{self, SCHEMA_VERSION};
-use crate::util::now_millis;
+use crate::util::{now_millis, now_millis_u64};
 
 /// 已解锁的保险库：持有 SQLite 连接与 DEK。
 pub struct Vault {
@@ -88,10 +89,13 @@ pub fn read_hint(path: &Path) -> Result<Option<String>, VaultError> {
     Ok(hint.flatten())
 }
 
-/// 打开数据库连接并启用外键约束（级联删除依赖此设置，每个连接都需开启）。
-fn open_connection(path: &Path) -> Result<Connection, VaultError> {
+/// 打开数据库连接，启用外键约束并执行 schema 迁移。
+///
+/// 外键约束是**每连接**生效的：级联删除依赖它，遗漏会导致孤儿数据。
+pub(crate) fn open_connection(path: &Path) -> Result<Connection, VaultError> {
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    schema::migrate(&conn)?;
     Ok(conn)
 }
 
@@ -140,20 +144,45 @@ pub fn initialize(path: &Path, master_password: &str) -> Result<InitResult, Vaul
     })
 }
 
-/// 用主密码解锁保险库（主密码错误时返回 `InvalidInput`）。
+/// 用主密码解锁保险库。
+///
+/// 处于退避锁定期时返回 `Locked`；主密码错误时累计失败次数，
+/// 达到阈值后进入指数退避锁定（**绝不删除或清空数据**）。
 pub fn unlock(path: &Path, master_password: &str) -> Result<Vault, VaultError> {
     let conn = open_connection(path)?;
+    let now_ms = now_millis_u64();
+
+    let status = lockout::status_of(&conn, now_ms)?;
+    if status.locked {
+        return Err(VaultError::Locked {
+            remaining_secs: status.remaining_secs,
+        });
+    }
+
     let (kdf_json, dekwrap_json) = read_kdf_and_dekwrap(&conn)?;
     let kdf: KdfParams = serde_json::from_str(&kdf_json)?;
     let dekwrap: Wrap = serde_json::from_str(&dekwrap_json)?;
     let kek = kdf.derive_kek(master_password.as_bytes())?;
-    let dek = security_core::unwrap_dek(&kek, &dekwrap).map_err(|_| {
-        VaultError::InvalidInput("incorrect master password".to_owned())
-    })?;
-    Ok(Vault { conn, dek })
+    match security_core::unwrap_dek(&kek, &dekwrap) {
+        Ok(dek) => {
+            lockout::reset(&conn)?;
+            Ok(Vault { conn, dek })
+        }
+        Err(_) => {
+            if let Some(remaining_secs) = lockout::register_failure(&conn, now_ms)? {
+                return Err(VaultError::Locked { remaining_secs });
+            }
+            Err(VaultError::InvalidInput(
+                "incorrect master password".to_owned(),
+            ))
+        }
+    }
 }
 
 /// 忘记主密码时，用恢复密钥重置主密码（DEK 与数据保持不变）。
+///
+/// 该通道**不受退避锁定限制**——否则用户一旦被锁定将无法自救；
+/// 其安全性由 256-bit 恢复密钥承担。成功后清零失败计数。
 pub fn recover(
     path: &Path,
     recovery_key_display: &str,
@@ -189,19 +218,37 @@ pub fn recover(
             serde_json::to_string(&new_dekwrap)?
         ],
     )?;
+    lockout::reset(&conn)?;
     Ok(())
 }
 
 /// 校验主密码是否正确（用于高敏感操作的二次验证），不改变保险库状态。
+///
+/// 同样受退避锁定约束——防止攻击者借二次验证接口暴力破解。
 pub fn verify_master_password(path: &Path, master_password: &str) -> Result<bool, VaultError> {
     let conn = open_connection(path)?;
+    let now_ms = now_millis_u64();
+    let status = lockout::status_of(&conn, now_ms)?;
+    if status.locked {
+        return Err(VaultError::Locked {
+            remaining_secs: status.remaining_secs,
+        });
+    }
     let (kdf_json, dekwrap_json) = read_kdf_and_dekwrap(&conn)?;
     let kdf: KdfParams = serde_json::from_str(&kdf_json)?;
     let dekwrap: Wrap = serde_json::from_str(&dekwrap_json)?;
     let Ok(kek) = kdf.derive_kek(master_password.as_bytes()) else {
         return Ok(false);
     };
-    Ok(security_core::unwrap_dek(&kek, &dekwrap).is_ok())
+    if security_core::unwrap_dek(&kek, &dekwrap).is_ok() {
+        lockout::reset(&conn)?;
+        Ok(true)
+    } else {
+        if let Some(remaining_secs) = lockout::register_failure(&conn, now_ms)? {
+            return Err(VaultError::Locked { remaining_secs });
+        }
+        Ok(false)
+    }
 }
 
 fn read_kdf_and_dekwrap(conn: &Connection) -> Result<(String, String), VaultError> {
