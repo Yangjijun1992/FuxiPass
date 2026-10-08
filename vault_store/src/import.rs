@@ -167,6 +167,8 @@ pub struct ImportOutcome {
 
 impl Vault {
     /// 批量导入候选账号（逐条写入；单条失败不阻断其余条目）。
+    ///
+    /// 每条候选先做必填校验，失败原因会精确保留（如「缺少平台/网站名」）。
     pub fn import_candidates(&self, candidates: &[ImportCandidate]) -> ImportOutcome {
         let mut imported = 0_usize;
         let mut failed = Vec::new();
@@ -177,6 +179,19 @@ impl Vault {
             }
         }
         let _ = self.record_audit("import_candidates", None, None);
+        ImportOutcome { imported, failed }
+    }
+
+    /// 批量导入已校验的入库输入（备份恢复路径使用）。
+    pub fn import_inputs(&self, inputs: &[AccountInput]) -> ImportOutcome {
+        let mut imported = 0_usize;
+        let mut failed = Vec::new();
+        for (i, input) in inputs.iter().enumerate() {
+            match self.create_account(input) {
+                Ok(_) => imported += 1,
+                Err(e) => failed.push(format!("#{}: {e}", i + 1)),
+            }
+        }
         ImportOutcome { imported, failed }
     }
 }

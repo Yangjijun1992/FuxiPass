@@ -8,7 +8,7 @@ use crate::error::VaultError;
 use crate::models::{AccountDetail, AccountSummary, FieldType, Importance, SecretFieldView};
 use crate::Vault;
 
-fn decrypt_string(key: &[u8; 32], sealed: &[u8]) -> Result<String, VaultError> {
+pub(crate) fn decrypt_string(key: &[u8; 32], sealed: &[u8]) -> Result<String, VaultError> {
     let bytes = seal::open(key, sealed)?;
     String::from_utf8(bytes).map_err(|_| VaultError::Crypto(security_core::SecurityError::Decryption))
 }

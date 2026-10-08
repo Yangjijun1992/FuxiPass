@@ -11,6 +11,7 @@
 pub mod accounts;
 pub mod accounts_read;
 pub mod audit;
+pub mod backup;
 pub mod error;
 pub mod import;
 pub mod lockout;
@@ -20,6 +21,7 @@ pub mod schema;
 pub mod util;
 pub mod vault;
 
+pub use backup::{read_backup, BackupAccount, BackupPayload, BACKUP_FORMAT};
 pub use error::VaultError;
 pub use lockout::{lock_status, LockStatus};
 pub use import::{
