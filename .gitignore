@@ -37,3 +37,7 @@ credentials*.txt
 *.sqlite
 *.sqlite3
 *.sqlcipher
+
+# 保险库与备份（即使已加密，也绝不入库）
+fuxipass-backup*.json
+*.vault.db.bak

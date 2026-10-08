@@ -142,6 +142,48 @@ pub fn cmd_change_password(args: &[String]) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+/// `delete`：按平台名删除账号（精确匹配优先，其次包含匹配）。
+///
+/// 匹配多条时不执行删除，避免误删；请改用更精确的名称。
+pub fn cmd_delete(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let db = require_db(args)?;
+    let pattern = flag(args, "--app").ok_or("缺少 --app")?;
+    let password = master_password(args)?;
+    let vault = unlock(&db, &password)?;
+    let needle = pattern.to_lowercase();
+
+    let accounts = vault.list_accounts()?;
+    let exact: Vec<_> = accounts
+        .iter()
+        .filter(|a| a.app_name.to_lowercase() == needle)
+        .collect();
+    let matched: Vec<_> = if exact.is_empty() {
+        accounts
+            .iter()
+            .filter(|a| a.app_name.to_lowercase().contains(&needle))
+            .collect()
+    } else {
+        exact
+    };
+
+    match matched.as_slice() {
+        [] => Err(format!("未找到匹配『{pattern}』的账号").into()),
+        [target] => {
+            vault.delete_account(&target.id)?;
+            println!("已删除：{}", target.app_name);
+            println!("库内现有 {} 条账号", vault.list_accounts()?.len());
+            Ok(())
+        }
+        many => {
+            println!("『{pattern}』匹配到 {} 条，未执行删除：", many.len());
+            for a in many {
+                println!("  {}", a.app_name);
+            }
+            Err("存在多条匹配，请使用更精确的名称".into())
+        }
+    }
+}
+
 /// `recover`：用恢复密钥重置主密码（数据不变；不消耗失败次数）。
 pub fn cmd_recover(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let db = require_db(args)?;
@@ -162,6 +204,7 @@ pub fn print_help() {
     println!("  export          --db <库> --out <备份文件>     [--backup-passphrase-file <文件>]");
     println!("  import-backup   --db <库> --in <备份文件>      [--backup-passphrase-file <文件>]");
     println!("  change-password --db <库>                     [--new-password-file <文件>]");
+    println!("  delete          --db <库> --app <名称>         [--password-file <文件>]");
     println!("  recover         --db <库>                     [--recovery-key-file <文件>] [--new-password-file <文件>]");
     println!();
     println!("说明：所有口令建议用 --*-file 传入，避免终端回显与 shell 历史留痕。");
