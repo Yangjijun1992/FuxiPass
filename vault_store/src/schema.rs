@@ -69,14 +69,19 @@ pub fn apply(conn: &Connection) -> Result<(), VaultError> {
     Ok(())
 }
 
-/// 把旧版本数据库迁移到当前版本（幂等；未初始化的库直接跳过）。
-pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
-    let meta_exists: i64 = conn.query_row(
+/// 判断库是否已完成初始化（存在 meta 表）。
+pub fn is_initialized(conn: &Connection) -> Result<bool, VaultError> {
+    let count: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta'",
         [],
         |row| row.get(0),
     )?;
-    if meta_exists == 0 {
+    Ok(count > 0)
+}
+
+/// 把旧版本数据库迁移到当前版本（幂等；未初始化的库直接跳过）。
+pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
+    if !is_initialized(conn)? {
         return Ok(());
     }
     let version: i64 = conn.query_row(

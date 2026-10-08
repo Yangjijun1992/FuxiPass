@@ -150,6 +150,9 @@ pub fn initialize(path: &Path, master_password: &str) -> Result<InitResult, Vaul
 /// 达到阈值后进入指数退避锁定（**绝不删除或清空数据**）。
 pub fn unlock(path: &Path, master_password: &str) -> Result<Vault, VaultError> {
     let conn = open_connection(path)?;
+    if !schema::is_initialized(&conn)? {
+        return Err(VaultError::NotInitialized);
+    }
     let now_ms = now_millis_u64();
 
     let status = lockout::status_of(&conn, now_ms)?;
@@ -194,6 +197,9 @@ pub fn recover(
         ));
     }
     let conn = open_connection(path)?;
+    if !schema::is_initialized(&conn)? {
+        return Err(VaultError::NotInitialized);
+    }
     let recoverywrap_json: Option<String> = conn
         .query_row("SELECT recoverywrap FROM meta WHERE id = 1", [], |row| {
             row.get(0)
@@ -227,6 +233,9 @@ pub fn recover(
 /// 同样受退避锁定约束——防止攻击者借二次验证接口暴力破解。
 pub fn verify_master_password(path: &Path, master_password: &str) -> Result<bool, VaultError> {
     let conn = open_connection(path)?;
+    if !schema::is_initialized(&conn)? {
+        return Err(VaultError::NotInitialized);
+    }
     let now_ms = now_millis_u64();
     let status = lockout::status_of(&conn, now_ms)?;
     if status.locked {
