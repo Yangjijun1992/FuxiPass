@@ -93,9 +93,9 @@ impl ApiError {
             Self::BadRequest(m) | Self::NotFound(m) | Self::Conflict(m) | Self::Internal(m) => {
                 m.clone()
             }
-            Self::TooManyAttempts { remaining_secs } => format!(
-                "连续输错次数过多，请在 {remaining_secs} 秒后重试（数据未被清除）"
-            ),
+            Self::TooManyAttempts { remaining_secs } => {
+                format!("连续输错次数过多，请在 {remaining_secs} 秒后重试（数据未被清除）")
+            }
             Self::Unauthorized => "missing or invalid session token".to_owned(),
             Self::Locked => "vault is locked".to_owned(),
         }
@@ -142,9 +142,6 @@ impl AppState {
 
     /// 当前是否已解锁（用于状态查询）。
     pub fn is_unlocked(&self) -> bool {
-        self.session
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.session.lock().map(|g| g.is_some()).unwrap_or(false)
     }
 }

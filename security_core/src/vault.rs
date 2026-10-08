@@ -38,10 +38,7 @@ pub fn unwrap_dek(kek: &Kek, dekwrap: &Wrap) -> Result<Dek, SecurityError> {
 }
 
 /// 用恢复密钥包裹 DEK（Recovery 包裹，`kdf` 为 `None`）。
-pub fn wrap_dek_via_recovery(
-    recovery: &RecoveryKey,
-    dek: &Dek,
-) -> Result<Wrap, SecurityError> {
+pub fn wrap_dek_via_recovery(recovery: &RecoveryKey, dek: &Dek) -> Result<Wrap, SecurityError> {
     wrap::wrap_with_key(recovery.as_array(), None, dek.as_bytes())
 }
 
@@ -113,8 +110,8 @@ mod tests {
         let (old_kek, dek, _rec, old_dekwrap, _rw) = init();
         let new_pw = b"new master password";
         let new_params = params();
-        let new_dekwrap = change_master_password(&old_kek, &old_dekwrap, new_pw, &new_params)
-            .unwrap();
+        let new_dekwrap =
+            change_master_password(&old_kek, &old_dekwrap, new_pw, &new_params).unwrap();
         let new_kek = derive_kek(new_pw, &new_params).unwrap();
         let dek_after = unwrap_dek(&new_kek, &new_dekwrap).unwrap();
         // DEK 不变：数据无需重加密。
@@ -126,8 +123,8 @@ mod tests {
         let (_kek, dek, recovery, _dekwrap, recovery_wrap) = init();
         let new_pw = b"recovered password";
         let new_params = params();
-        let new_dekwrap = recover_and_reset(&recovery, &recovery_wrap, new_pw, &new_params)
-            .unwrap();
+        let new_dekwrap =
+            recover_and_reset(&recovery, &recovery_wrap, new_pw, &new_params).unwrap();
         let new_kek = derive_kek(new_pw, &new_params).unwrap();
         let dek_after = unwrap_dek(&new_kek, &new_dekwrap).unwrap();
         assert_eq!(dek_after.as_bytes(), dek.as_bytes());

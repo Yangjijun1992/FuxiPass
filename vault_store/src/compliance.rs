@@ -31,12 +31,12 @@ impl Vault {
         let accounts: i64 = self
             .conn
             .query_row("SELECT count(*) FROM accounts", [], |r| r.get(0))?;
-        let secret_fields: i64 = self
-            .conn
-            .query_row("SELECT count(*) FROM secret_fields", [], |r| r.get(0))?;
-        let audit_entries: i64 = self
-            .conn
-            .query_row("SELECT count(*) FROM audit_logs", [], |r| r.get(0))?;
+        let secret_fields: i64 =
+            self.conn
+                .query_row("SELECT count(*) FROM secret_fields", [], |r| r.get(0))?;
+        let audit_entries: i64 =
+            self.conn
+                .query_row("SELECT count(*) FROM audit_logs", [], |r| r.get(0))?;
         Ok(DataSummary {
             accounts: usize::try_from(accounts).unwrap_or(usize::MAX),
             secret_fields: usize::try_from(secret_fields).unwrap_or(usize::MAX),

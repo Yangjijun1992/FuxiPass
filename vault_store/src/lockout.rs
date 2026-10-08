@@ -62,10 +62,7 @@ pub(crate) fn status_of(conn: &Connection, now_ms: u64) -> Result<LockStatus, Va
 }
 
 /// 记录一次失败。达到阈值时开启退避锁定，返回本次锁定的秒数。
-pub(crate) fn register_failure(
-    conn: &Connection,
-    now_ms: u64,
-) -> Result<Option<u64>, VaultError> {
+pub(crate) fn register_failure(conn: &Connection, now_ms: u64) -> Result<Option<u64>, VaultError> {
     let (current, _) = read_counter(conn)?;
     let attempts = current.saturating_add(1);
     if attempts < LOCK_THRESHOLD {
@@ -77,7 +74,11 @@ pub(crate) fn register_failure(
     }
     let exponent = attempts.saturating_sub(LOCK_THRESHOLD).min(3);
     let minutes = (BASE_LOCK_MINUTES << exponent).min(MAX_LOCK_MINUTES);
-    let until_ms = now_ms.saturating_add(minutes.saturating_mul(SECONDS_PER_MINUTE).saturating_mul(MS_PER_SECOND));
+    let until_ms = now_ms.saturating_add(
+        minutes
+            .saturating_mul(SECONDS_PER_MINUTE)
+            .saturating_mul(MS_PER_SECOND),
+    );
     conn.execute(
         "UPDATE meta SET failed_attempts = ?1, locked_until = ?2 WHERE id = 1",
         params![i64::from(attempts), until_ms.to_string()],

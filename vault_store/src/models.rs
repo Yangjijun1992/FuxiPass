@@ -87,7 +87,9 @@ impl FieldType {
     /// 是否属于「极高」敏感级别（查看/复制需二次验证，PRD §3.4.2）。
     pub const fn requires_second_factor(self) -> bool {
         match self {
-            Self::SecondaryPassword | Self::PaymentPassword | Self::ApiKey | Self::PrivateKey => true,
+            Self::SecondaryPassword | Self::PaymentPassword | Self::ApiKey | Self::PrivateKey => {
+                true
+            }
             Self::LoginPassword | Self::Totp => false,
         }
     }

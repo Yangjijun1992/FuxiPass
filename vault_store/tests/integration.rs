@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 核心账号链路验收测试：初始化、解锁、CRUD、检索、揭示、审计。
 
 mod common;
@@ -95,17 +98,17 @@ fn reveal_secret_returns_value_and_writes_audit() {
     let (_tv, vault, _rk) = bootstrapped();
     let id = vault.create_account(&sample_input()).unwrap();
 
-    let value = vault.reveal_secret(&id, FieldType::SecondaryPassword).unwrap();
+    let value = vault
+        .reveal_secret(&id, FieldType::SecondaryPassword)
+        .unwrap();
     assert_eq!(value, "888444");
     let login = vault.reveal_secret(&id, FieldType::LoginPassword).unwrap();
     assert_eq!(login, "LoginPw!234");
 
     // 审计：记录了揭示操作与字段类别，但绝不含明文
     let audit = vault.list_audit(50).unwrap();
-    assert!(audit
-        .iter()
-        .any(|e| e.operation == "reveal_secret"
-            && e.field_category.as_deref() == Some("secondary_password")));
+    assert!(audit.iter().any(|e| e.operation == "reveal_secret"
+        && e.field_category.as_deref() == Some("secondary_password")));
     assert!(audit.iter().all(|e| !e.operation.contains("888444")));
 
     assert!(matches!(
@@ -136,7 +139,9 @@ fn update_account_replaces_values() {
         .field_types
         .contains(&FieldType::PaymentPassword));
     assert_eq!(
-        vault.reveal_secret(&id, FieldType::PaymentPassword).unwrap(),
+        vault
+            .reveal_secret(&id, FieldType::PaymentPassword)
+            .unwrap(),
         "666777"
     );
 }

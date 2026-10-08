@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 防爆破退避锁定验收测试（T2.3）。
 //!
 //! 覆盖 PRD §3.4.3：
@@ -65,7 +68,6 @@ fn bootstrapped() -> (TempVault, String) {
     (tv, init.recovery_key_display)
 }
 
-
 /// 断言结果为「锁定」，返回剩余秒数。避免 `unwrap_err` 要求 `Vault: Debug`。
 fn expect_locked(result: Result<vault_store::Vault, VaultError>) -> u64 {
     match result {
@@ -131,11 +133,7 @@ fn backoff_grows_and_caps_at_thirty_minutes() {
     let expected_minutes = [5_u64, 10, 20, 30, 30];
     for minutes in expected_minutes {
         let remaining_secs = expect_locked(unlock(tv.path(), "wrong"));
-        assert_eq!(
-            remaining_secs,
-            minutes * 60,
-            "退避时长应为 {minutes} 分钟"
-        );
+        assert_eq!(remaining_secs, minutes * 60, "退避时长应为 {minutes} 分钟");
         expire_lock(tv.path());
     }
 }

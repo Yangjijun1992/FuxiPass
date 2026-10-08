@@ -53,15 +53,24 @@ macro_rules! secret_key_type {
 
             /// 按 32 字节数组引用访问（供 AEAD 密钥用）。
             pub fn as_array(&self) -> &[u8; 32] {
-                &*self.0
+                &self.0
             }
         }
     };
 }
 
-secret_key_type!(Kek, "Key Encryption Key：由主密码经 Argon2id 派生，用于包裹/解包 DEK。不在库中持久化。");
-secret_key_type!(Dek, "Data Encryption Key：256-bit 随机生成，实际加密全量数据，被 KEK/RecoveryKey 包裹后持有。");
-secret_key_type!(AccountKey, "Account Key：存于 OS Keystore/Keychain，受生物识别与 TEE 保护，用于快捷解锁短期会话。");
+secret_key_type!(
+    Kek,
+    "Key Encryption Key：由主密码经 Argon2id 派生，用于包裹/解包 DEK。不在库中持久化。"
+);
+secret_key_type!(
+    Dek,
+    "Data Encryption Key：256-bit 随机生成，实际加密全量数据，被 KEK/RecoveryKey 包裹后持有。"
+);
+secret_key_type!(
+    AccountKey,
+    "Account Key：存于 OS Keystore/Keychain，受生物识别与 TEE 保护，用于快捷解锁短期会话。"
+);
 
 /// 灾难恢复密钥（≥256-bit 熵）。用户离线保管，用于主密码遗忘时解开 DEK。
 #[derive(Clone, PartialEq, Eq)]
@@ -85,7 +94,7 @@ impl RecoveryKey {
 
     /// 按 32 字节数组引用访问。
     pub fn as_array(&self) -> &[u8; 32] {
-        &*self.0
+        &self.0
     }
 
     /// 渲染成人类可读、便于抄录的分组字符串（Crockford Base32，4 字符一组以 `-` 分隔）。

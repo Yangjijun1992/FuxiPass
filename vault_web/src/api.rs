@@ -10,8 +10,8 @@ use axum::http::HeaderMap;
 use axum::Json;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use serde::{Deserialize, Serialize};
 use security_core::cipher::CryptoRng;
+use serde::{Deserialize, Serialize};
 use vault_store::{AccountDetail, AccountInput, AccountSummary, FieldType};
 
 use crate::state::{ApiError, AppState, Unlocked};
@@ -120,7 +120,10 @@ pub struct RecoveryKeyResp {
     pub recovery_key: String,
 }
 
-pub(crate) fn require_second_factor(state: &AppState, master_password: &str) -> Result<(), ApiError> {
+pub(crate) fn require_second_factor(
+    state: &AppState,
+    master_password: &str,
+) -> Result<(), ApiError> {
     let verified = vault_store::verify_master_password(&state.db_path, master_password)
         .map_err(ApiError::from_vault)?;
     if verified {
@@ -219,7 +222,10 @@ pub async fn unlock(
 }
 
 /// `POST /api/lock`
-pub async fn lock(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Result<Json<()>, ApiError> {
+pub async fn lock(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<()>, ApiError> {
     let token = AppState::token_from(&headers)?;
     let mut guard = state
         .session

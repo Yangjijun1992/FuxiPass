@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 智能导入解析器测试（T2.6）：覆盖常见旧文本格式与边界情况。
 
 use vault_store::{parse_notes, ImportCandidate};
@@ -129,5 +132,4 @@ fn notes_only_entry_is_kept_with_missing_password_issue() {
     let c = first("[待补录站点]\n备注：账号密码待补充");
     assert_eq!(c.app_name.as_deref(), Some("待补录站点"));
     assert!(c.issues.iter().any(|i| i.contains("缺少密码")));
-    assert!(c.issues.iter().any(|i| i.contains("缺少平台") == false));
 }

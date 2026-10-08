@@ -188,9 +188,7 @@ pub fn read_backup(data: &[u8], passphrase: &str) -> Result<BackupPayload, Vault
     let payload: BackupPayload = serde_json::from_slice(&plaintext)
         .map_err(|_| VaultError::InvalidInput("备份内容解析失败".to_owned()))?;
     if payload.format != BACKUP_FORMAT {
-        return Err(VaultError::InvalidInput(
-            "备份格式标识不匹配".to_owned(),
-        ));
+        return Err(VaultError::InvalidInput("备份格式标识不匹配".to_owned()));
     }
     Ok(payload)
 }

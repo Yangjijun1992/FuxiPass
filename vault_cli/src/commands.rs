@@ -15,7 +15,11 @@ fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
 }
 
 /// 读取口令：优先文件，其次 stdin。
-fn read_secret(args: &[String], flag_name: &str, prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn read_secret(
+    args: &[String],
+    flag_name: &str,
+    prompt: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(path) = flag(args, flag_name) {
         let raw = fs::read_to_string(path)?;
         return Ok(raw.trim_end_matches(['\n', '\r']).to_owned());
@@ -95,7 +99,11 @@ pub fn cmd_list(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let accounts = vault.list_accounts()?;
     println!("共 {} 条账号：", accounts.len());
     for account in accounts {
-        println!("  {:<28} 字段 {} 个", account.app_name, account.field_types.len());
+        println!(
+            "  {:<28} 字段 {} 个",
+            account.app_name,
+            account.field_types.len()
+        );
     }
     Ok(())
 }
@@ -105,7 +113,11 @@ pub fn cmd_export(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let db = require_db(args)?;
     let out = flag(args, "--out").ok_or("缺少 --out")?;
     let password = master_password(args)?;
-    let backup_pw = read_secret(args, "--backup-passphrase-file", "请输入备份口令（可与主密码不同）")?;
+    let backup_pw = read_secret(
+        args,
+        "--backup-passphrase-file",
+        "请输入备份口令（可与主密码不同）",
+    )?;
 
     let vault = unlock(&db, &password)?;
     let data = vault.export_backup(&backup_pw)?;

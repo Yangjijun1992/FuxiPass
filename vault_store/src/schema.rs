@@ -84,11 +84,10 @@ pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
     if !is_initialized(conn)? {
         return Ok(());
     }
-    let version: i64 = conn.query_row(
-        "SELECT schema_version FROM meta WHERE id = 1",
-        [],
-        |row| row.get(0),
-    )?;
+    let version: i64 =
+        conn.query_row("SELECT schema_version FROM meta WHERE id = 1", [], |row| {
+            row.get(0)
+        })?;
     if version < 2 {
         conn.execute_batch(
             "ALTER TABLE meta ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;

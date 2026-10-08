@@ -148,10 +148,7 @@ pub fn parse_notes(text: &str) -> Vec<ImportCandidate> {
         .into_iter()
         .map(|b| parse_block(&b))
         .filter(|c| {
-            c.app_name.is_some()
-                || c.username.is_some()
-                || has_any_password(c)
-                || c.notes.is_some()
+            c.app_name.is_some() || c.username.is_some() || has_any_password(c) || c.notes.is_some()
         })
         .collect()
 }

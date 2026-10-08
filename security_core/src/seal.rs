@@ -79,7 +79,9 @@ mod tests {
     #[test]
     fn sealed_blob_does_not_contain_plaintext() {
         let sealed = seal(&key(), b"TOPSECRET").unwrap();
-        assert!(!sealed.windows(b"TOPSECRET".len()).any(|w| w == b"TOPSECRET"));
+        assert!(!sealed
+            .windows(b"TOPSECRET".len())
+            .any(|w| w == b"TOPSECRET"));
     }
 
     #[test]
@@ -88,7 +90,10 @@ mod tests {
         if let Some(last) = sealed.last_mut() {
             *last ^= 0xFF;
         }
-        assert!(matches!(open(&key(), &sealed), Err(SecurityError::Decryption)));
+        assert!(matches!(
+            open(&key(), &sealed),
+            Err(SecurityError::Decryption)
+        ));
     }
 
     #[test]

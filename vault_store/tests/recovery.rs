@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 恢复与导入链路验收测试：改密、恢复码、提示词、文本导入。
 
 mod common;
@@ -17,7 +20,9 @@ fn change_master_password_preserves_data() {
     assert!(unlock(tv.path(), MASTER).is_err());
     let vault = unlock(tv.path(), "new-master-pw").unwrap();
     assert_eq!(
-        vault.reveal_secret(&id, FieldType::SecondaryPassword).unwrap(),
+        vault
+            .reveal_secret(&id, FieldType::SecondaryPassword)
+            .unwrap(),
         "888444"
     );
 }
@@ -180,7 +185,11 @@ fn purge_all_accounts_removes_data_but_keeps_vault_usable() {
     let removed = vault.purge_all_accounts().unwrap();
     assert_eq!(removed, 1);
     assert_eq!(vault.list_accounts().unwrap().len(), 0);
-    assert_eq!(vault.data_summary().unwrap().secret_fields, 0, "字段应级联清除");
+    assert_eq!(
+        vault.data_summary().unwrap().secret_fields,
+        0,
+        "字段应级联清除"
+    );
     drop(vault);
 
     // 库仍可用：主密码不变、结构完好
@@ -199,11 +208,15 @@ fn audit_can_be_filtered_by_operation() {
     let id = vault.create_account(&sample_input()).unwrap();
     let _ = vault.reveal_secret(&id, FieldType::LoginPassword).unwrap();
 
-    let reveals = vault.list_audit_filtered(50, Some("reveal_secret")).unwrap();
+    let reveals = vault
+        .list_audit_filtered(50, Some("reveal_secret"))
+        .unwrap();
     assert!(!reveals.is_empty());
     assert!(reveals.iter().all(|e| e.operation == "reveal_secret"));
 
-    let creates = vault.list_audit_filtered(50, Some("create_account")).unwrap();
+    let creates = vault
+        .list_audit_filtered(50, Some("create_account"))
+        .unwrap();
     assert!(creates.iter().all(|e| e.operation == "create_account"));
 
     let all = vault.list_audit_filtered(50, None).unwrap();

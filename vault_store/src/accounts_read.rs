@@ -10,7 +10,8 @@ use crate::Vault;
 
 pub(crate) fn decrypt_string(key: &[u8; 32], sealed: &[u8]) -> Result<String, VaultError> {
     let bytes = seal::open(key, sealed)?;
-    String::from_utf8(bytes).map_err(|_| VaultError::Crypto(security_core::SecurityError::Decryption))
+    String::from_utf8(bytes)
+        .map_err(|_| VaultError::Crypto(security_core::SecurityError::Decryption))
 }
 
 impl Vault {
@@ -101,7 +102,11 @@ impl Vault {
         let sealed =
             sealed.ok_or_else(|| VaultError::SecretNotFound(field_type.as_str().to_owned()))?;
         let value = decrypt_string(self.key(), &sealed)?;
-        self.record_audit("reveal_secret", Some(field_type.category()), Some(account_id))?;
+        self.record_audit(
+            "reveal_secret",
+            Some(field_type.category()),
+            Some(account_id),
+        )?;
         Ok(value)
     }
 

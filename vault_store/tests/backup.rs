@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 加密备份导出/导入验收测试（T3.6）。
 //!
 //! 关键性质：备份文件不含明文；口令错误/文件被篡改必须失败；
@@ -8,9 +11,7 @@ use std::path::{Path, PathBuf};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use security_core::cipher::CryptoRng;
-use vault_store::{
-    initialize, unlock, AccountInput, FieldType, Importance, Vault, VaultError,
-};
+use vault_store::{initialize, unlock, AccountInput, FieldType, Importance, Vault, VaultError};
 
 struct TempVault {
     path: PathBuf,
@@ -88,19 +89,27 @@ fn export_then_import_into_fresh_vault_restores_every_field() {
     let detail = target.get_account(&restored.id).unwrap();
     assert_eq!(detail.notes.as_deref(), Some("密保答案：蓝色"));
     assert_eq!(
-        target.reveal_secret(&restored.id, FieldType::LoginPassword).unwrap(),
+        target
+            .reveal_secret(&restored.id, FieldType::LoginPassword)
+            .unwrap(),
         "LoginPw!234"
     );
     assert_eq!(
-        target.reveal_secret(&restored.id, FieldType::SecondaryPassword).unwrap(),
+        target
+            .reveal_secret(&restored.id, FieldType::SecondaryPassword)
+            .unwrap(),
         "888444"
     );
     assert_eq!(
-        target.reveal_secret(&restored.id, FieldType::PaymentPassword).unwrap(),
+        target
+            .reveal_secret(&restored.id, FieldType::PaymentPassword)
+            .unwrap(),
         "666777"
     );
     assert_eq!(
-        target.reveal_secret(&restored.id, FieldType::ApiKey).unwrap(),
+        target
+            .reveal_secret(&restored.id, FieldType::ApiKey)
+            .unwrap(),
         "sk-backup-test"
     );
     assert!(!id.is_empty());
@@ -123,9 +132,7 @@ fn backup_file_contains_no_plaintext() {
         "密保答案",
     ] {
         assert!(
-            !backup
-                .windows(needle.len())
-                .any(|w| w == needle.as_bytes()),
+            !backup.windows(needle.len()).any(|w| w == needle.as_bytes()),
             "备份文件不得包含明文：{needle}"
         );
     }
@@ -138,7 +145,9 @@ fn wrong_backup_passphrase_is_rejected() {
     let backup = vault.export_backup(BACKUP_PW).unwrap();
 
     let (target_tv, target) = fresh_vault("wrongpw_dst");
-    let err = target.import_backup(&backup, "totally-wrong-pw").unwrap_err();
+    let err = target
+        .import_backup(&backup, "totally-wrong-pw")
+        .unwrap_err();
     assert!(
         matches!(err, VaultError::InvalidInput(_)),
         "口令错误应被拒绝，实际 {err}"
@@ -158,7 +167,10 @@ fn tampered_backup_is_rejected() {
     backup[mid] = if backup[mid] == b'A' { b'B' } else { b'A' };
 
     let (target_tv, target) = fresh_vault("tamper_dst");
-    assert!(target.import_backup(&backup, BACKUP_PW).is_err(), "篡改必须被发现");
+    assert!(
+        target.import_backup(&backup, BACKUP_PW).is_err(),
+        "篡改必须被发现"
+    );
     drop(target_tv);
 }
 

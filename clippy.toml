@@ -1,0 +1,14 @@
+# 工作区级 Clippy 配置（CI 与本地均从仓库根运行，故配置须放在根目录）。
+#
+# 说明：Clippy 从**当前工作目录**向上查找 clippy.toml；各 crate 目录下的同名文件
+# 仅在从该 crate 目录运行时才生效。为保证 CI 行为一致，此处为权威配置。
+
+# 测试代码中允许 unwrap/expect/panic/dbg/print（非测试代码仍由
+# 各 crate 的 [lints.clippy] unwrap_used/expect_used/panic = deny 强制）。
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+
+single-char-binding-names-threshold = 4

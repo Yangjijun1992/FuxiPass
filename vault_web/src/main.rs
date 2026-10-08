@@ -113,11 +113,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
             }
             "--seed-demo" => {
                 i += 1;
-                seed_demo = Some(
-                    args.get(i)
-                        .ok_or("--seed-demo 需要一个主密码参数")?
-                        .clone(),
-                );
+                seed_demo = Some(args.get(i).ok_or("--seed-demo 需要一个主密码参数")?.clone());
             }
             "--help" | "-h" => {
                 print_help();

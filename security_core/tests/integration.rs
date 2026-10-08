@@ -1,11 +1,14 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! SecurityCore 端到端验收测试：驱动真实初始化 → 解锁 → 改密 → 恢复流程。
 //!
 //! 对应 PRD §8.1（密钥架构/加密）、§8.2（恢复/重置）的自动化验收用例。
 
 use security_core::{
-    change_master_password, derive_kek, generate_dek, generate_recovery_key,
-    recover_and_reset, unwrap_dek, unwrap_dek_via_recovery, wrap_dek, wrap_dek_via_recovery,
-    KdfParams, SecurityError, Wrap,
+    change_master_password, derive_kek, generate_dek, generate_recovery_key, recover_and_reset,
+    unwrap_dek, unwrap_dek_via_recovery, wrap_dek, wrap_dek_via_recovery, KdfParams, SecurityError,
+    Wrap,
 };
 
 /// 一个已被初始化、可直接演练全部流程的测试夹具。
@@ -45,8 +48,7 @@ fn change_master_password_preserves_data_key() {
     let v = bootstrap(b"old-pw");
     let new_pw = b"brand-new-pw";
     let new_params = KdfParams::with_random_salt();
-    let new_dekwrap =
-        change_master_password(&v.kek, &v.dekwrap, new_pw, &new_params).unwrap();
+    let new_dekwrap = change_master_password(&v.kek, &v.dekwrap, new_pw, &new_params).unwrap();
     let new_kek = derive_kek(new_pw, &new_params).unwrap();
     let dek_after = unwrap_dek(&new_kek, &new_dekwrap).unwrap();
     assert_eq!(dek_after.as_bytes(), v.dek.as_bytes());

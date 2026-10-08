@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! 集成测试共用夹具（`tests/common/mod.rs` 不是独立测试目标，供各测试文件 `mod common;` 引入）。
 #![allow(dead_code)]
 

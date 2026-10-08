@@ -100,10 +100,9 @@ pub async fn export_backup(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("attachment; filename=\"fuxipass-backup.json\""),
     );
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store"),
-    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(response)
 }
 

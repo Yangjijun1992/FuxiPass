@@ -15,7 +15,11 @@ fn secret_pairs(input: &AccountInput) -> Vec<(FieldType, &str)> {
     if let Some(v) = input.login_password.as_deref().filter(|s| !s.is_empty()) {
         pairs.push((FieldType::LoginPassword, v));
     }
-    if let Some(v) = input.secondary_password.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(v) = input
+        .secondary_password
+        .as_deref()
+        .filter(|s| !s.is_empty())
+    {
         pairs.push((FieldType::SecondaryPassword, v));
     }
     if let Some(v) = input.payment_password.as_deref().filter(|s| !s.is_empty()) {

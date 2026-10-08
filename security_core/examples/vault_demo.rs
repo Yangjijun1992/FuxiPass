@@ -29,8 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[OK] 解锁还原 DEK 一致");
 
     // 恢复验证
-    let recovered = unwrap_dek_via_recovery(&RecoveryKey::from_display(&recovery.to_display())?,
-        &recovery_wrap)?;
+    let recovered = unwrap_dek_via_recovery(
+        &RecoveryKey::from_display(&recovery.to_display())?,
+        &recovery_wrap,
+    )?;
     assert_eq!(recovered.as_bytes(), dek.as_bytes());
     println!("[OK] RecoveryKey 显示→解析→解包还原 DEK 一致");
 

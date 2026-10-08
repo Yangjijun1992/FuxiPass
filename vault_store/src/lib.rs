@@ -15,8 +15,8 @@ pub mod backup;
 pub mod compliance;
 pub mod error;
 pub mod import;
-pub mod lockout;
 pub mod import_parse;
+pub mod lockout;
 pub mod models;
 pub mod schema;
 pub mod util;
@@ -25,10 +25,8 @@ pub mod vault;
 pub use backup::{read_backup, BackupAccount, BackupPayload, BACKUP_FORMAT};
 pub use compliance::DataSummary;
 pub use error::VaultError;
+pub use import::{candidate_to_input, parse_notes, ImportCandidate, ImportOutcome};
 pub use lockout::{lock_status, LockStatus};
-pub use import::{
-    candidate_to_input, parse_notes, ImportCandidate, ImportOutcome,
-};
 pub use models::{
     masked_preview, AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, Importance,
     SecretFieldView,
