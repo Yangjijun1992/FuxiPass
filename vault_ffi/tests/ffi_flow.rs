@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! FFI 端到端流程测试（需数据库，Miri 下跳过）。
 //!
 //! 覆盖：解锁 → 列表 → 新建 → 详情 → 二次验证揭示 → 更新 → 删除 → 释放句柄，
@@ -13,9 +16,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use security_core::cipher::CryptoRng;
 use vault_ffi::{
-    fuxipass_create_account, fuxipass_delete_account, fuxipass_get_account,
-    fuxipass_last_error, fuxipass_list_accounts, fuxipass_lock, fuxipass_lock_status,
-    fuxipass_reveal_secret, fuxipass_string_free, fuxipass_unlock, fuxipass_update_account,
+    fuxipass_create_account, fuxipass_delete_account, fuxipass_get_account, fuxipass_last_error,
+    fuxipass_list_accounts, fuxipass_lock, fuxipass_lock_status, fuxipass_reveal_secret,
+    fuxipass_string_free, fuxipass_unlock, fuxipass_update_account,
 };
 use vault_store::{initialize, AccountInput, Importance};
 
@@ -85,7 +88,11 @@ fn take(ptr: *mut c_char) -> Option<String> {
         return None;
     }
     // SAFETY: 指针由本库分配、NUL 结尾，读取后立即释放一次。
-    let s = unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(str::to_owned);
+    let s = unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .ok()
+        .map(str::to_owned);
+    // SAFETY: [分类 12] ptr 由本库分配且此处仅释放一次。
     unsafe { fuxipass_string_free(ptr) };
     s
 }
@@ -136,12 +143,14 @@ db_test!(unlock_list_create_reveal_update_delete_flow, {
     let field = CString::new("secondary_password").unwrap();
     let wrong = CString::new("definitely-wrong-pw").unwrap();
     // SAFETY: handle 有效；三个 CString 均存活。
-    let denied = unsafe {
-        fuxipass_reveal_secret(handle, id_c.as_ptr(), field.as_ptr(), wrong.as_ptr())
-    };
+    let denied =
+        unsafe { fuxipass_reveal_secret(handle, id_c.as_ptr(), field.as_ptr(), wrong.as_ptr()) };
     assert!(denied.is_null(), "错误主密码不得揭示明文");
     let err = last_error().unwrap();
-    assert!(err.contains("UNAUTHORIZED") || err.contains("主密码"), "错误: {err}");
+    assert!(
+        err.contains("UNAUTHORIZED") || err.contains("主密码"),
+        "错误: {err}"
+    );
 
     // 二次验证：正确主密码
     // SAFETY: handle 有效；参数均为存活的 CString。
@@ -155,16 +164,16 @@ db_test!(unlock_list_create_reveal_update_delete_flow, {
     updated["app_name"] = serde_json::json!("建设银行(改)");
     let updated_c = CString::new(updated.to_string()).unwrap();
     // SAFETY: handle 有效；参数为存活的 CString。
-    let code =
-        unsafe { fuxipass_update_account(handle, id_c.as_ptr(), updated_c.as_ptr()) };
+    let code = unsafe { fuxipass_update_account(handle, id_c.as_ptr(), updated_c.as_ptr()) };
     assert_eq!(code, 0, "更新失败: {:?}", last_error());
 
     // 删除
     // SAFETY: handle 有效；id_c 存活。
     let code = unsafe { fuxipass_delete_account(handle, id_c.as_ptr()) };
     assert_eq!(code, 0, "删除失败: {:?}", last_error());
-    // SAFETY: handle 有效。
-    assert_eq!(take(unsafe { fuxipass_list_accounts(handle) }).unwrap(), "[]");
+    // SAFETY: handle 来自上面的 unlock 且尚未释放。
+    let after_delete = take(unsafe { fuxipass_list_accounts(handle) }).unwrap();
+    assert_eq!(after_delete, "[]");
 
     // 释放句柄
     // SAFETY: handle 来自 unlock 且此前从未释放，此处一次性释放。

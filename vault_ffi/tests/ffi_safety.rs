@@ -1,3 +1,6 @@
+// 集成测试为**纯测试代码**，允许 unwrap/expect/panic（生产代码 src/ 仍全局 deny）。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! FFI 边界安全测试。
 //!
 //! **全部用例均不触碰数据库**，因此可在 Miri 下运行（验证指针/内存正确性）。
@@ -7,10 +10,8 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use vault_ffi::convert::{free_c_string, to_c_string};
-use vault_ffi::{
-    fuxipass_lock, fuxipass_lock_status, fuxipass_string_free, fuxipass_unlock,
-};
 use vault_ffi::error::clone_last_error;
+use vault_ffi::{fuxipass_lock, fuxipass_lock_status, fuxipass_string_free, fuxipass_unlock};
 
 /// 读取 C 字符串并释放（测试辅助，配对正确）。
 fn take(ptr: *mut std::ffi::c_char) -> Option<String> {
@@ -18,7 +19,11 @@ fn take(ptr: *mut std::ffi::c_char) -> Option<String> {
         return None;
     }
     // SAFETY: 指针由本库分配且以 NUL 结尾；此处读取后立即释放一次。
-    let s = unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(str::to_owned);
+    let s = unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .ok()
+        .map(str::to_owned);
+    // SAFETY: [分类 12] ptr 由本库分配且此处仅释放一次。
     unsafe { fuxipass_string_free(ptr) };
     s
 }
@@ -95,7 +100,10 @@ fn taking_reported_error_twice_is_safe() {
     let _ = unsafe { fuxipass_lock_status(ptr::null()) };
     let first = take_error();
     let second = take_error();
-    assert!(first.is_some() && second.is_some(), "每次调用都应返回独立副本");
+    assert!(
+        first.is_some() && second.is_some(),
+        "每次调用都应返回独立副本"
+    );
 }
 
 /// 读取并释放 `fuxipass_last_error` 返回的指针。

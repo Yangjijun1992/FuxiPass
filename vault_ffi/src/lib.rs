@@ -49,10 +49,14 @@ pub unsafe extern "C" fn fuxipass_unlock(
     master_password: *const c_char,
 ) -> *mut FuxiHandle {
     let result = guard(|| {
-        // SAFETY: [分类 8] 见本函数 `# Safety` 契约。
-        let path = unsafe { cstr_to_string(db_path, "db_path") }?;
-        // SAFETY: [分类 8] 同上。
-        let password = unsafe { cstr_to_string(master_password, "master_password") }?;
+        // SAFETY: [分类 8 — FFI 边界] 本函数 `# Safety` 契约保证两个入参均为
+        // 合法的 NUL 结尾 C 字符串（或 NULL，函数内会检查），且在本次调用期间有效。
+        let (path, password) = unsafe {
+            (
+                cstr_to_string(db_path, "db_path")?,
+                cstr_to_string(master_password, "master_password")?,
+            )
+        };
         let vault =
             vault_store::unlock(Path::new(&path), &password).map_err(FfiError::from_vault)?;
         Ok(Box::into_raw(Box::new(FuxiHandle {
@@ -92,10 +96,12 @@ pub unsafe extern "C" fn fuxipass_lock(handle: *mut FuxiHandle) {
 #[no_mangle]
 pub unsafe extern "C" fn fuxipass_list_accounts(handle: *mut FuxiHandle) -> *mut c_char {
     let result = guard(|| {
-        // SAFETY: [分类 3] 见本函数 `# Safety` 契约。
+        // SAFETY: [分类 3 — 悬垂指针] 本函数 `# Safety` 契约保证 handle 有效且未释放；
+        // 返回的借用不逃逸本次调用。
         let state = unsafe { handle_ref(handle) }?;
         let accounts = state.vault.list_accounts().map_err(FfiError::from_vault)?;
-        let json = serde_json::to_string(&accounts).map_err(|e| FfiError::internal(e.to_string()))?;
+        let json =
+            serde_json::to_string(&accounts).map_err(|e| FfiError::internal(e.to_string()))?;
         Ok(to_c_string(json))
     });
     match result {
@@ -118,9 +124,14 @@ pub unsafe extern "C" fn fuxipass_get_account(
     account_id: *const c_char,
 ) -> *mut c_char {
     let result = guard(|| {
-        // SAFETY: [分类 3/8] 见本函数 `# Safety` 契约。
-        let state = unsafe { handle_ref(handle) }?;
-        let id = unsafe { cstr_to_string(account_id, "account_id") }?;
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // account_id 为合法 C 字符串或 NULL。
+        let (state, id) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(account_id, "account_id")?,
+            )
+        };
         let detail = state.vault.get_account(&id).map_err(FfiError::from_vault)?;
         let json = serde_json::to_string(&detail).map_err(|e| FfiError::internal(e.to_string()))?;
         Ok(to_c_string(json))
@@ -145,12 +156,20 @@ pub unsafe extern "C" fn fuxipass_create_account(
     input_json: *const c_char,
 ) -> c_int {
     let result = guard(|| {
-        // SAFETY: [分类 3/8] 见本函数 `# Safety` 契约。
-        let state = unsafe { handle_ref(handle) }?;
-        let raw = unsafe { cstr_to_string(input_json, "input_json") }?;
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // input_json 为合法 C 字符串或 NULL。
+        let (state, raw) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(input_json, "input_json")?,
+            )
+        };
         let input: vault_store::AccountInput = serde_json::from_str(&raw)
             .map_err(|e| FfiError::bad_request(format!("input_json 解析失败: {e}")))?;
-        state.vault.create_account(&input).map_err(FfiError::from_vault)?;
+        state
+            .vault
+            .create_account(&input)
+            .map_err(FfiError::from_vault)?;
         Ok(0)
     });
     match result {
@@ -174,10 +193,15 @@ pub unsafe extern "C" fn fuxipass_update_account(
     input_json: *const c_char,
 ) -> c_int {
     let result = guard(|| {
-        // SAFETY: [分类 3/8] 见本函数 `# Safety` 契约。
-        let state = unsafe { handle_ref(handle) }?;
-        let id = unsafe { cstr_to_string(account_id, "account_id") }?;
-        let raw = unsafe { cstr_to_string(input_json, "input_json") }?;
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // 两个字符串参数合法或为 NULL。
+        let (state, id, raw) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(account_id, "account_id")?,
+                cstr_to_string(input_json, "input_json")?,
+            )
+        };
         let input: vault_store::AccountInput = serde_json::from_str(&raw)
             .map_err(|e| FfiError::bad_request(format!("input_json 解析失败: {e}")))?;
         state
@@ -206,10 +230,18 @@ pub unsafe extern "C" fn fuxipass_delete_account(
     account_id: *const c_char,
 ) -> c_int {
     let result = guard(|| {
-        // SAFETY: [分类 3/8] 见本函数 `# Safety` 契约。
-        let state = unsafe { handle_ref(handle) }?;
-        let id = unsafe { cstr_to_string(account_id, "account_id") }?;
-        state.vault.delete_account(&id).map_err(FfiError::from_vault)?;
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // account_id 合法或为 NULL。
+        let (state, id) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(account_id, "account_id")?,
+            )
+        };
+        state
+            .vault
+            .delete_account(&id)
+            .map_err(FfiError::from_vault)?;
         Ok(0)
     });
     match result {
@@ -234,11 +266,16 @@ pub unsafe extern "C" fn fuxipass_reveal_secret(
     master_password: *const c_char,
 ) -> *mut c_char {
     let result = guard(|| {
-        // SAFETY: [分类 3/8] 见本函数 `# Safety` 契约。
-        let state = unsafe { handle_ref(handle) }?;
-        let id = unsafe { cstr_to_string(account_id, "account_id") }?;
-        let field_raw = unsafe { cstr_to_string(field_type, "field_type") }?;
-        let password = unsafe { cstr_to_string(master_password, "master_password") }?;
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // 三个字符串参数合法或为 NULL。
+        let (state, id, field_raw, password) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(account_id, "account_id")?,
+                cstr_to_string(field_type, "field_type")?,
+                cstr_to_string(master_password, "master_password")?,
+            )
+        };
         let field = FieldType::parse(&field_raw)
             .ok_or_else(|| FfiError::bad_request(format!("未知字段类型: {field_raw}")))?;
         // 二次验证：与 Web 接口一致，必须先校验主密码再揭示（且同样受退避锁定约束）。
@@ -274,7 +311,8 @@ pub unsafe extern "C" fn fuxipass_reveal_secret(
 #[no_mangle]
 pub unsafe extern "C" fn fuxipass_lock_status(db_path: *const c_char) -> *mut c_char {
     let result = guard(|| {
-        // SAFETY: [分类 8] 见本函数 `# Safety` 契约。
+        // SAFETY: [分类 8] 本函数 `# Safety` 契约保证 db_path 为合法
+        // NUL 结尾 C 字符串或 NULL。
         let path = unsafe { cstr_to_string(db_path, "db_path") }?;
         let status = vault_store::lock_status(Path::new(&path)).map_err(FfiError::from_vault)?;
         let json = serde_json::to_string(&status).map_err(|e| FfiError::internal(e.to_string()))?;
