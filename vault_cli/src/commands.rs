@@ -142,6 +142,17 @@ pub fn cmd_change_password(args: &[String]) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+/// `recover`：用恢复密钥重置主密码（数据不变；不消耗失败次数）。
+pub fn cmd_recover(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let db = require_db(args)?;
+    let recovery_key = read_secret(args, "--recovery-key-file", "请输入恢复密钥后回车")?;
+    let new_password = read_secret(args, "--new-password-file", "请输入新主密码")?;
+    vault_store::recover(&db, &recovery_key, &new_password)?;
+    println!("主密码已通过恢复密钥重置（数据未受影响）。");
+    println!("请立即用新主密码验证：vault_cli list --db <库> --password-file <文件>");
+    Ok(())
+}
+
 /// 帮助信息。
 pub fn print_help() {
     println!("vault_cli —— 安全密码管家离线运维");
@@ -151,6 +162,7 @@ pub fn print_help() {
     println!("  export          --db <库> --out <备份文件>     [--backup-passphrase-file <文件>]");
     println!("  import-backup   --db <库> --in <备份文件>      [--backup-passphrase-file <文件>]");
     println!("  change-password --db <库>                     [--new-password-file <文件>]");
+    println!("  recover         --db <库>                     [--recovery-key-file <文件>] [--new-password-file <文件>]");
     println!();
     println!("说明：所有口令建议用 --*-file 传入，避免终端回显与 shell 历史留痕。");
 }

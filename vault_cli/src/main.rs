@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("export") => commands::cmd_export(&args[1..]),
         Some("import-backup") => commands::cmd_import_backup(&args[1..]),
         Some("change-password") => commands::cmd_change_password(&args[1..]),
+        Some("recover") => commands::cmd_recover(&args[1..]),
         _ => {
             commands::print_help();
             Ok(())
