@@ -104,12 +104,13 @@
   <!-- 锁定 -->
   <div id="view-lock" class="panel hidden">
     <h3 style="margin-top:0">解锁保险库</h3>
+    <div id="lock-banner" class="alert warn hidden"></div>
     <div id="hint" class="muted hidden" style="margin-bottom:8px"></div>
     <label>主密码</label>
     <input id="unlock-pw" type="password" autocomplete="current-password"
            onkeydown="if(event.key==='Enter')doUnlock()">
     <div class="row" style="margin-top:14px">
-      <button class="primary" onclick="doUnlock()">解锁</button>
+      <button id="unlock-btn" class="primary" onclick="doUnlock()">解锁</button>
       <button class="ghost" onclick="toggle('recover-box')">忘记主密码？用恢复密钥</button>
     </div>
     <div id="recover-box" class="hidden">
@@ -225,10 +226,42 @@ async function api(path, opts = {}) {
   return data;
 }
 
+let lockCountdown = null;
+
+function applyLockState(status) {
+  const banner = document.getElementById('lock-banner');
+  const btn = document.getElementById('unlock-btn');
+  if (lockCountdown) { clearInterval(lockCountdown); lockCountdown = null; }
+  let remaining = status.lock_remaining_secs || 0;
+  if (remaining <= 0) {
+    banner.classList.add('hidden');
+    btn.disabled = false;
+    if (status.failed_attempts > 0) {
+      banner.textContent = `已连续输错 ${status.failed_attempts} 次，再错 ${5 - status.failed_attempts} 次将锁定（不会清除数据）`;
+      banner.classList.remove('hidden');
+    }
+    return;
+  }
+  const paint = () => {
+    if (remaining <= 0) {
+      clearInterval(lockCountdown); lockCountdown = null;
+      banner.classList.add('hidden'); btn.disabled = false; refresh(); return;
+    }
+    const m = Math.floor(remaining / 60), s = remaining % 60;
+    banner.textContent = `🔒 连续输错过多，已锁定。请在 ${m} 分 ${String(s).padStart(2,'0')} 秒后重试。（数据未被清除）`;
+    banner.classList.remove('hidden');
+    remaining -= 1;
+  };
+  btn.disabled = true;
+  paint();
+  lockCountdown = setInterval(paint, 1000);
+}
+
 async function refresh() {
   const s = await api('/api/status');
   show(s.initialized ? (s.unlocked ? 'main' : 'lock') : 'init');
   if (s.initialized && !s.unlocked) {
+    applyLockState(s);
     try {
       const h = await api('/api/hint');
       const el = document.getElementById('hint');
@@ -268,7 +301,10 @@ async function doUnlock() {
     document.getElementById('unlock-pw').value = '';
     msg('');
     await refresh();
-  } catch (e) { msg('解锁失败：' + e.message, 'err'); }
+  } catch (e) {
+    msg('解锁失败：' + e.message, 'err');
+    await refresh();
+  }
 }
 
 async function doLock() {

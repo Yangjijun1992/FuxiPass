@@ -25,6 +25,10 @@ pub struct StatusResp {
     pub initialized: bool,
     /// 当前是否已解锁。
     pub unlocked: bool,
+    /// 退避锁定剩余秒数（未锁定为 0）。
+    pub lock_remaining_secs: u64,
+    /// 累计输错次数（成功解锁后清零）。
+    pub failed_attempts: u32,
 }
 
 /// 初始化请求。
@@ -159,9 +163,20 @@ fn new_token() -> String {
 
 /// `GET /api/status`
 pub async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResp> {
+    let initialized = state.db_path.exists();
+    let (lock_remaining_secs, failed_attempts) = if initialized {
+        match vault_store::lock_status(&state.db_path) {
+            Ok(lock) => (lock.remaining_secs, lock.failed_attempts),
+            Err(_) => (0, 0),
+        }
+    } else {
+        (0, 0)
+    };
     Json(StatusResp {
-        initialized: state.db_path.exists(),
+        initialized,
         unlocked: state.is_unlocked(),
+        lock_remaining_secs,
+        failed_attempts,
     })
 }
 

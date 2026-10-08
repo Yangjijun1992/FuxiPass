@@ -37,6 +37,11 @@ pub enum ApiError {
     NotFound(String),
     /// 资源冲突（如已初始化、卡片已存在）。
     Conflict(String),
+    /// 因连续输错被退避锁定。
+    TooManyAttempts {
+        /// 剩余锁定秒数。
+        remaining_secs: u64,
+    },
     /// 服务端内部错误。
     Internal(String),
 }
@@ -51,6 +56,7 @@ impl ApiError {
             VaultError::SecretNotFound(t) => Self::NotFound(format!("secret field {t}")),
             VaultError::InvalidInput(m) => Self::BadRequest(m),
             VaultError::RecoveryFailed => Self::BadRequest("invalid recovery key".to_owned()),
+            VaultError::Locked { remaining_secs } => Self::TooManyAttempts { remaining_secs },
             other => Self::Internal(other.to_string()),
         }
     }
@@ -63,6 +69,7 @@ impl ApiError {
             Self::Locked => StatusCode::LOCKED,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::TooManyAttempts { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -75,6 +82,7 @@ impl ApiError {
             Self::Locked => "LOCKED",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) => "CONFLICT",
+            Self::TooManyAttempts { .. } => "TOO_MANY_ATTEMPTS",
             Self::Internal(_) => "INTERNAL",
         }
     }
@@ -85,6 +93,9 @@ impl ApiError {
             Self::BadRequest(m) | Self::NotFound(m) | Self::Conflict(m) | Self::Internal(m) => {
                 m.clone()
             }
+            Self::TooManyAttempts { remaining_secs } => format!(
+                "连续输错次数过多，请在 {remaining_secs} 秒后重试（数据未被清除）"
+            ),
             Self::Unauthorized => "missing or invalid session token".to_owned(),
             Self::Locked => "vault is locked".to_owned(),
         }
