@@ -1,14 +1,18 @@
-//! SQLite 表结构与建库逻辑（对照 docs/04 §1）。
+//! SQLite 表结构与建库/迁移逻辑（对照 docs/04 §1）。
 //!
 //! 所有敏感列在写入前由应用层用 DEK 做 AES-256-GCM 字段级加密，
 //! 因此即便数据库文件被拷贝，也读不到任何明文。
+//!
+//! 版本历史：
+//! - v1：初始结构。
+//! - v2：`meta` 增加 `failed_attempts` / `locked_until`，用于防爆破退避锁定（T2.3）。
 
 use rusqlite::Connection;
 
 use crate::VaultError;
 
 /// 当前 schema 版本，便于后续迁移。
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_SQL: &str = r"
 PRAGMA foreign_keys = ON;
@@ -20,6 +24,8 @@ CREATE TABLE IF NOT EXISTS meta (
     dekwrap         TEXT    NOT NULL,
     recoverywrap    TEXT,
     hint            TEXT,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until    TEXT,
     created_at      TEXT    NOT NULL
 );
 
@@ -60,5 +66,30 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(ts);
 /// 应用建表语句（幂等）。
 pub fn apply(conn: &Connection) -> Result<(), VaultError> {
     conn.execute_batch(SCHEMA_SQL)?;
+    Ok(())
+}
+
+/// 把旧版本数据库迁移到当前版本（幂等；未初始化的库直接跳过）。
+pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
+    let meta_exists: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta'",
+        [],
+        |row| row.get(0),
+    )?;
+    if meta_exists == 0 {
+        return Ok(());
+    }
+    let version: i64 = conn.query_row(
+        "SELECT schema_version FROM meta WHERE id = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    if version < 2 {
+        conn.execute_batch(
+            "ALTER TABLE meta ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE meta ADD COLUMN locked_until TEXT;",
+        )?;
+        conn.execute("UPDATE meta SET schema_version = 2 WHERE id = 1", [])?;
+    }
     Ok(())
 }

@@ -13,7 +13,12 @@ pub(crate) fn new_id() -> String {
 
 /// 当前时间戳（epoch 毫秒字符串）。
 pub(crate) fn now_millis() -> String {
+    now_millis_u64().to_string()
+}
+
+/// 当前时间戳（epoch 毫秒数值，供退避锁定计算使用）。
+pub(crate) fn now_millis_u64() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or_else(|_| String::from("0"), |d| d.as_millis().to_string())
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }

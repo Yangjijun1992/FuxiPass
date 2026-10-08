@@ -37,6 +37,13 @@ pub enum VaultError {
     #[error("recovery failed: invalid recovery key or corrupted wrap")]
     RecoveryFailed,
 
+    /// 因连续输错而处于退避锁定期（**不会清除任何数据**）。
+    #[error("too many failed attempts; try again in {remaining_secs} seconds")]
+    Locked {
+        /// 剩余锁定秒数。
+        remaining_secs: u64,
+    },
+
     /// 文件系统错误。
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
