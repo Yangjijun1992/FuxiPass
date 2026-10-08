@@ -1,5 +1,7 @@
 # FuxiPass · 安全密码管家
 
+[![ci](https://github.com/Yangjijun1992/FuxiPass/actions/workflows/ci.yml/badge.svg)](https://github.com/Yangjijun1992/FuxiPass/actions/workflows/ci.yml)
+
 > **零知识、本地强加密、灾难可恢复**的个人账户与密码管理项目。
 
 一个面向 Android / iOS 的密码管理器项目：主密码永不上云、数据全程本地加密，并提供
