@@ -183,10 +183,21 @@
         </div>
       </div>
 
+            <label style="margin-top:18px">备份与迁移（换机用）</label>
+      <p class="muted" style="margin:4px 0 8px">
+        导出为<b>口令加密</b>的备份文件（文件内无任何明文）；在新机器上用「导入备份」恢复。
+      </p>
+      <div class="row">
+        <button onclick="doExportBackup()">导出加密备份</button>
+        <button onclick="document.getElementById('backup-file').click()">导入备份</button>
+        <input id="backup-file" type="file" accept=".json" class="hidden" onchange="doImportBackup(event)">
+      </div>
+
       <div class="row" style="margin-top:18px">
         <button class="ghost" onclick="toggle('settings-panel')">收起</button>
       </div>
     </div>
+
     <div id="list"></div>
     <div id="audit-panel" class="panel hidden">
       <h3 style="margin-top:0">审计日志（不含明文）</h3>
@@ -780,6 +791,56 @@ async function doCommitImport() {
     document.getElementById('import-text').value = '';
     await doSearch();
   } catch (e) { msg('导入失败：' + e.message, 'err'); }
+}
+
+/* ---------- 备份与迁移（T3.6） ---------- */
+async function doExportBackup() {
+  const pass = prompt('设置备份口令（≥ 8 位，可与主密码不同）。\n\n⚠️ 请牢记：备份口令丢失后备份无法恢复。');
+  if (pass === null) return;
+  if (pass.length < 8) return msg('备份口令至少 8 位', 'err');
+  const mp = prompt('二次验证：请输入主密码');
+  if (mp === null) return;
+  try {
+    const res = await fetch('/api/backup/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': TOKEN },
+      body: JSON.stringify({ passphrase: pass, master_password: mp })
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => null);
+      throw new Error(e && e.error ? e.error.message : res.statusText);
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'fuxipass-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    msg('已导出加密备份（请连同备份口令妥善保存）');
+  } catch (e) { msg('导出失败：' + e.message, 'err'); }
+}
+
+async function doImportBackup(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const pass = prompt('请输入该备份的备份口令');
+  if (pass === null) { ev.target.value = ''; return; }
+  const mp = prompt('二次验证：请输入主密码');
+  if (mp === null) { ev.target.value = ''; return; }
+  try {
+    const text = await file.text();
+    const r = await api('/api/backup/import', {
+      method: 'POST',
+      body: JSON.stringify({ data: text, passphrase: pass, master_password: mp })
+    });
+    let m = `备份导入完成：成功 ${r.imported} 条`;
+    if (r.failed && r.failed.length) m += `，失败 ${r.failed.length} 条`;
+    msg(m);
+    await doSearch();
+  } catch (e) { msg('导入备份失败：' + e.message, 'err'); }
+  ev.target.value = '';
 }
 
 document.getElementById('unlock-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); });

@@ -4,6 +4,7 @@
 //! 非生产形态；生产形态为移动端 App（见 docs/01 架构规格）。
 
 mod api;
+mod api_data;
 mod middleware;
 mod state;
 
@@ -41,8 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/recovery-key/regenerate",
             post(api::regenerate_recovery_key),
         )
-        .route("/api/import/parse", post(api::import_parse))
-        .route("/api/import/commit", post(api::import_commit))
+        .route("/api/import/parse", post(api_data::import_parse))
+        .route("/api/import/commit", post(api_data::import_commit))
+        .route("/api/backup/export", post(api_data::export_backup))
+        .route("/api/backup/import", post(api_data::import_backup))
         .route(
             "/api/accounts",
             get(api::list_accounts).post(api::create_account),

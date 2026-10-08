@@ -12,9 +12,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use security_core::cipher::CryptoRng;
-use vault_store::{
-    AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, ImportCandidate, ImportOutcome,
-};
+use vault_store::{AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType};
 
 use crate::state::{ApiError, AppState, Unlocked};
 
@@ -122,30 +120,7 @@ pub struct RecoveryKeyResp {
     pub recovery_key: String,
 }
 
-/// 导入解析请求。
-#[derive(Deserialize)]
-pub struct ImportParseReq {
-    /// 用户粘贴的原始文本。
-    pub text: String,
-}
-
-/// 导入解析响应。
-#[derive(Serialize)]
-pub struct ImportParseResp {
-    /// 解析出的候选账号。
-    pub candidates: Vec<ImportCandidate>,
-}
-
-/// 导入提交请求（含二次验证主密码）。
-#[derive(Deserialize)]
-pub struct ImportCommitReq {
-    /// 用户确认后的候选列表。
-    pub candidates: Vec<ImportCandidate>,
-    /// 二次验证：当前主密码。
-    pub master_password: String,
-}
-
-fn require_second_factor(state: &AppState, master_password: &str) -> Result<(), ApiError> {
+pub(crate) fn require_second_factor(state: &AppState, master_password: &str) -> Result<(), ApiError> {
     let verified = vault_store::verify_master_password(&state.db_path, master_password)
         .map_err(ApiError::from_vault)?;
     if verified {
@@ -210,30 +185,6 @@ pub async fn regenerate_recovery_key(
     require_second_factor(&state, &req.master_password)?;
     let recovery_key = state.with_vault(&token, |v| v.regenerate_recovery_key())?;
     Ok(Json(RecoveryKeyResp { recovery_key }))
-}
-
-/// `POST /api/import/parse`
-pub async fn import_parse(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(req): Json<ImportParseReq>,
-) -> Result<Json<ImportParseResp>, ApiError> {
-    let token = AppState::token_from(&headers)?;
-    state.with_vault(&token, |_v| Ok(()))?;
-    let candidates = vault_store::parse_notes(&req.text);
-    Ok(Json(ImportParseResp { candidates }))
-}
-
-/// `POST /api/import/commit`（二次验证后批量入库）
-pub async fn import_commit(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(req): Json<ImportCommitReq>,
-) -> Result<Json<ImportOutcome>, ApiError> {
-    let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let outcome = state.with_vault(&token, |v| Ok(v.import_candidates(&req.candidates)))?;
-    Ok(Json(outcome))
 }
 
 /// `POST /api/initialize`
