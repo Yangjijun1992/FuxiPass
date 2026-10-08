@@ -1,0 +1,27 @@
+[package]
+name = "recovery_service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "安全密码管家·零知识找回服务（T2.4/T2.5）：仅存不可逆哈希与加密包裹"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+security_core = { path = "../security_core" }
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+non_ascii_idents = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

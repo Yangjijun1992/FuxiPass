@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["security_core", "vault_store", "vault_web", "vault_cli", "vault_ffi"]
+members = [
+    "security_core",
+    "vault_store",
+    "vault_web",
+    "vault_cli",
+    "vault_ffi",
+    "recovery_service",
+]
 
 [workspace.package]
 version = "0.1.0"
