@@ -906,6 +906,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault_ffi"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "security_core",
+ "serde_json",
+ "vault_store",
+]
+
+[[package]]
 name = "vault_store"
 version = "0.1.0"
 dependencies = [
