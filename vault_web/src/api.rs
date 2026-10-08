@@ -12,7 +12,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use security_core::cipher::CryptoRng;
-use vault_store::{AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType};
+use vault_store::{AccountDetail, AccountInput, AccountSummary, FieldType};
 
 use crate::state::{ApiError, AppState, Unlocked};
 
@@ -322,14 +322,4 @@ pub async fn reveal(
     }
     let value = state.with_vault(&token, |v| v.reveal_secret(&req.account_id, req.field_type))?;
     Ok(Json(RevealResp { value }))
-}
-
-/// `GET /api/audit`
-pub async fn audit(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<AuditEntry>>, ApiError> {
-    let token = AppState::token_from(&headers)?;
-    let entries = state.with_vault(&token, |v| v.list_audit(100))?;
-    Ok(Json(entries))
 }

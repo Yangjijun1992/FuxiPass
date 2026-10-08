@@ -4,6 +4,7 @@
 //! 非生产形态；生产形态为移动端 App（见 docs/01 架构规格）。
 
 mod api;
+mod api_compliance;
 mod api_data;
 mod middleware;
 mod state;
@@ -57,7 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .delete(api::delete_account),
         )
         .route("/api/reveal", post(api::reveal))
-        .route("/api/audit", get(api::audit))
+        .route("/api/audit", get(api_compliance::audit))
+        .route("/api/audit/export", get(api_compliance::audit_export))
+        .route("/api/compliance/summary", get(api_compliance::summary))
+        .route("/api/vault/purge", post(api_compliance::purge))
         .route_layer(axum_mw::from_fn_with_state(
             shared.clone(),
             middleware::require_session,

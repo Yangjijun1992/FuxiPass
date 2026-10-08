@@ -193,6 +193,18 @@
         <input id="backup-file" type="file" accept=".json" class="hidden" onchange="doImportBackup(event)">
       </div>
 
+      <label style="margin-top:18px">隐私与合规（PIPL）</label>
+      <div id="compliance-summary" class="muted" style="margin:4px 0 8px">点击下方按钮加载数据概览</div>
+      <div class="row">
+        <button onclick="loadCompliance()">数据概览</button>
+        <button class="danger" onclick="doPurge()">删除全部数据</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">
+        本应用为<b>本地零知识存储</b>：数据仅存于本机数据库并以字段级 AES-256-GCM 加密；
+        主密码与恢复密钥不出本机。你可随时<b>导出加密备份</b>（上方）行使数据可携带权，
+        或<b>删除全部数据</b>行使删除权。
+      </p>
+
       <div class="row" style="margin-top:18px">
         <button class="ghost" onclick="toggle('settings-panel')">收起</button>
       </div>
@@ -201,6 +213,21 @@
     <div id="list"></div>
     <div id="audit-panel" class="panel hidden">
       <h3 style="margin-top:0">审计日志（不含明文）</h3>
+      <div class="row" style="margin-bottom:8px">
+        <select id="audit-op" onchange="loadAudit()" style="max-width:220px">
+          <option value="">全部操作</option>
+          <option value="reveal_secret">高敏感字段揭示</option>
+          <option value="view_account">查看账号</option>
+          <option value="create_account">新建账号</option>
+          <option value="update_account">更新账号</option>
+          <option value="delete_account">删除账号</option>
+          <option value="import_candidates">文本导入</option>
+          <option value="export_backup">导出备份</option>
+          <option value="import_backup">导入备份</option>
+          <option value="purge_all_accounts">删除全部数据</option>
+        </select>
+        <button onclick="exportAudit()">导出 CSV</button>
+      </div>
       <div id="audit-list"></div>
     </div>
   </div>
@@ -585,10 +612,14 @@ function openEditor(existing) {
 async function toggleAudit() {
   const panel = document.getElementById('audit-panel');
   panel.classList.toggle('hidden');
-  if (panel.classList.contains('hidden')) return;
+  if (!panel.classList.contains('hidden')) await loadAudit();
+}
+
+async function loadAudit() {
+  const op = document.getElementById('audit-op').value;
+  const box = document.getElementById('audit-list');
   try {
-    const items = await api('/api/audit');
-    const box = document.getElementById('audit-list');
+    const items = await api('/api/audit?limit=200' + (op ? '&operation=' + encodeURIComponent(op) : ''));
     box.innerHTML = '';
     if (!items.length) { box.textContent = '暂无记录'; return; }
     for (const it of items) {
@@ -601,6 +632,47 @@ async function toggleAudit() {
       box.appendChild(d);
     }
   } catch (e) { msg('审计查询失败：' + e.message, 'err'); }
+}
+
+async function exportAudit() {
+  try {
+    const res = await fetch('/api/audit/export', { headers: { 'X-Session-Token': TOKEN } });
+    if (!res.ok) throw new Error(res.statusText);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'fuxipass-audit-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+    msg('审计日志已导出（CSV，不含任何明文）');
+  } catch (e) { msg('导出失败：' + e.message, 'err'); }
+}
+
+/* ---------- 隐私与合规（T4.4） ---------- */
+async function loadCompliance() {
+  try {
+    const s = await api('/api/compliance/summary');
+    document.getElementById('compliance-summary').textContent =
+      `当前库内：账号 ${s.accounts} 条 · 密码字段 ${s.secret_fields} 个 · 审计记录 ${s.audit_entries} 条`;
+  } catch (e) { msg('读取失败：' + e.message, 'err'); }
+}
+
+async function doPurge() {
+  const phrase = prompt('⚠️ 此操作将删除全部账号数据，且不可逆！\n\n建议先「导出加密备份」。\n\n请输入确认短语（区分：删除全部数据）');
+  if (phrase === null) return;
+  if (phrase !== '删除全部数据') return msg('确认短语不正确，已取消', 'err');
+  if (!confirm('最后确认：真的要删除全部账号数据吗？')) return;
+  const mp = prompt('二次验证：请输入主密码');
+  if (mp === null) return;
+  try {
+    const r = await api('/api/vault/purge', {
+      method: 'POST',
+      body: JSON.stringify({ master_password: mp, confirm: phrase })
+    });
+    msg(`已删除 ${r.purged_accounts} 条账号数据`);
+    await doSearch();
+    await loadCompliance();
+  } catch (e) { msg('删除失败：' + e.message, 'err'); }
 }
 
 function copyText(t) {
@@ -641,6 +713,7 @@ async function openSettings() {
     const h = await api('/api/hint');
     document.getElementById('hint-input').value = h.hint || '';
   } catch (e) { /* 忽略 */ }
+  await loadCompliance();
 }
 
 async function saveHint() {
