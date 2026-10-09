@@ -101,7 +101,7 @@ impl Vault {
             .optional()?;
         let sealed =
             sealed.ok_or_else(|| VaultError::SecretNotFound(field_type.as_str().to_owned()))?;
-        let value = decrypt_string(self.key(), &sealed)?;
+        let value = self.open_secret(field_type, &sealed)?;
         self.record_audit(
             "reveal_secret",
             Some(field_type.category()),

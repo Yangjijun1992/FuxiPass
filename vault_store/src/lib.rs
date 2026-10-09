@@ -14,6 +14,7 @@ pub mod audit;
 pub mod backup;
 pub mod compliance;
 pub mod error;
+pub mod fdek;
 pub mod import;
 pub mod import_parse;
 pub mod lockout;

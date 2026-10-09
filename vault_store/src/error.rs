@@ -37,6 +37,15 @@ pub enum VaultError {
     #[error("recovery failed: invalid recovery key or corrupted wrap")]
     RecoveryFailed,
 
+    /// 该库已启用 FDEK 但缺少恢复密钥包裹，无法在重置主密码时重封装。
+    /// 为避免**静默丢失**高敏感字段，此处直接拒绝。
+    #[error("vault has FDEK but no recovery wrap; refusing password reset to avoid data loss")]
+    FdekRecoveryUnavailable,
+
+    /// 需要先完成二次验证（重新输入主密码）才能读写高敏感字段。
+    #[error("second-factor verification required to access high-sensitivity fields")]
+    SecondFactorRequired,
+
     /// 因连续输错而处于退避锁定期（**不会清除任何数据**）。
     #[error("too many failed attempts; try again in {remaining_secs} seconds")]
     Locked {

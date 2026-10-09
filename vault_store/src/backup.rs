@@ -148,12 +148,11 @@ impl Vault {
         let rows = stmt.query_map(params![account_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?;
-        let key = self.key();
         let mut out = Vec::new();
         for row in rows {
             let (field_type, sealed) = row?;
             if let Some(ft) = FieldType::parse(&field_type) {
-                out.push((ft, decrypt_string(key, &sealed)?));
+                out.push((ft, self.open_secret(ft, &sealed)?));
             }
         }
         Ok(out)

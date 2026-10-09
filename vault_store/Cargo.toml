@@ -7,6 +7,7 @@ description = "安全密码管家数据层：SQLite 存储 + 字段级 AES-256-G
 
 [dependencies]
 security_core = { path = "../security_core" }
+zeroize = "~1.4"
 base64 = "0.22"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

@@ -108,7 +108,6 @@ impl Vault {
             "DELETE FROM secret_fields WHERE account_id = ?1",
             params![account_id],
         )?;
-        let key = self.key();
         for (field_type, value) in secret_pairs(input) {
             let requires_2fa = if field_type.requires_second_factor() {
                 1_i64
@@ -123,7 +122,7 @@ impl Vault {
                     new_id(),
                     account_id,
                     field_type.as_str(),
-                    seal::seal(key, value.as_bytes())?,
+                    self.seal_secret(field_type, value)?,
                     masked_preview(value),
                     requires_2fa,
                     ts
