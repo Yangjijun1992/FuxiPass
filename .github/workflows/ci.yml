@@ -52,3 +52,21 @@ jobs:
       - env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-symbolic-alignment-check"
         run: cargo miri test -p vault_ffi --test ffi_safety
+
+  ffi-abi:
+    name: FFI C ABI 冒烟（模拟外部调用方）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 构建并准备测试库
+        run: |
+          cargo build -p vault_ffi -p vault_cli
+          printf '测试站点\n账号：smoke_user\n密码：Smoke#123\n二级密码：888444\n' > /tmp/smoke.txt
+          printf '%s' 'smoke-master-12345' > /tmp/pw.txt
+          cargo run -q -p vault_cli -- import --db /tmp/abis.db --text /tmp/smoke.txt --password-file /tmp/pw.txt
+      - name: 编译并运行 C ABI 冒烟测试
+        run: |
+          cc vault_ffi/tests/c_abi_smoke.c -Ltarget/debug -lvault_ffi -lpthread -ldl -lm -o /tmp/abi_smoke
+          LD_LIBRARY_PATH=target/debug /tmp/abi_smoke /tmp/abis.db smoke-master-12345
