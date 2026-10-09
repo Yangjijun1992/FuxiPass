@@ -27,6 +27,8 @@ pub struct StatusResp {
     pub lock_remaining_secs: u64,
     /// 累计输错次数（成功解锁后清零）。
     pub failed_attempts: u32,
+    /// 空闲自动锁定秒数（`0` 表示关闭）。
+    pub idle_timeout_secs: u64,
 }
 
 /// 初始化请求。
@@ -140,6 +142,7 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResp> {
         unlocked: state.is_unlocked(),
         lock_remaining_secs,
         failed_attempts,
+        idle_timeout_secs: state.idle_timeout_secs,
     })
 }
 
@@ -200,10 +203,7 @@ pub async fn unlock(
         .session
         .lock()
         .map_err(|_| ApiError::Internal("session lock poisoned".to_owned()))?;
-    *guard = Some(Unlocked {
-        token: token.clone(),
-        vault,
-    });
+    *guard = Some(Unlocked::new(token.clone(), vault));
     Ok(Json(UnlockResp { token }))
 }
 

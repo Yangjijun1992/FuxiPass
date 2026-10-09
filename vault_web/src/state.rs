@@ -8,12 +8,14 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use vault_store::{Vault, VaultError};
 
-/// 已解锁会话：会话令牌 + 已解锁保险库。
+/// 已解锁会话：会话令牌 + 已解锁保险库 + 最近活跃时间。
 pub struct Unlocked {
     /// 会话令牌（随机，仅存内存）。
     pub token: String,
     /// 已解锁的保险库。
     pub vault: Vault,
+    /// 最近一次成功请求的时间（epoch 毫秒），用于空闲自动锁定。
+    pub last_activity_ms: u64,
 }
 
 /// 全局应用状态。
@@ -22,6 +24,26 @@ pub struct AppState {
     pub db_path: PathBuf,
     /// 当前会话（同一时刻仅支持一个解锁会话）。
     pub session: Mutex<Option<Unlocked>>,
+    /// 空闲自动锁定秒数（`0` 表示关闭）。默认 300 秒（5 分钟）。
+    pub idle_timeout_secs: u64,
+}
+
+impl Unlocked {
+    /// 新建会话（活跃时间置为当前）。
+    pub fn new(token: String, vault: Vault) -> Self {
+        Self {
+            token,
+            vault,
+            last_activity_ms: now_ms(),
+        }
+    }
+}
+
+/// 读取当前时间（epoch 毫秒）。
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// API 错误。
@@ -33,6 +55,8 @@ pub enum ApiError {
     Unauthorized,
     /// 尚未解锁。
     Locked,
+    /// 会话因长时间空闲已自动锁定。
+    SessionExpired,
     /// 资源不存在。
     NotFound(String),
     /// 资源冲突（如已初始化、卡片已存在）。
@@ -66,7 +90,7 @@ impl ApiError {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Locked => StatusCode::LOCKED,
+            Self::Locked | Self::SessionExpired => StatusCode::LOCKED,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::TooManyAttempts { .. } => StatusCode::TOO_MANY_REQUESTS,
@@ -80,6 +104,7 @@ impl ApiError {
             Self::BadRequest(_) => "BAD_REQUEST",
             Self::Unauthorized => "UNAUTHORIZED",
             Self::Locked => "LOCKED",
+            Self::SessionExpired => "SESSION_EXPIRED",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) => "CONFLICT",
             Self::TooManyAttempts { .. } => "TOO_MANY_ATTEMPTS",
@@ -98,6 +123,7 @@ impl ApiError {
             }
             Self::Unauthorized => "missing or invalid session token".to_owned(),
             Self::Locked => "vault is locked".to_owned(),
+            Self::SessionExpired => "会话因长时间空闲已自动锁定，请重新解锁".to_owned(),
         }
     }
 }
@@ -121,12 +147,42 @@ impl AppState {
             .ok_or(ApiError::Unauthorized)
     }
 
-    /// 在已解锁保险库上执行只读/写操作（校验令牌）。
+    /// 校验令牌并刷新活跃时间；空闲超时则**自动锁定**并返回 `SessionExpired`。
+    ///
+    /// 这是「闲置自动锁定」的执行点：任何已认证请求都会经过它。
+    pub fn check_and_touch(&self, token: &str) -> Result<(), ApiError> {
+        let mut guard = self
+            .session
+            .lock()
+            .map_err(|_| ApiError::Internal("session lock poisoned".to_owned()))?;
+        let now = now_ms();
+        let expired = {
+            let Some(unlocked) = guard.as_ref() else {
+                return Err(ApiError::Locked);
+            };
+            if unlocked.token != token {
+                return Err(ApiError::Unauthorized);
+            }
+            is_idle_expired(unlocked.last_activity_ms, now, self.idle_timeout_secs)
+        };
+        if expired {
+            // 自动锁定：清除会话（Vault 被 drop，密钥经 zeroize 擦除）。
+            *guard = None;
+            return Err(ApiError::SessionExpired);
+        }
+        if let Some(unlocked) = guard.as_mut() {
+            unlocked.last_activity_ms = now;
+        }
+        Ok(())
+    }
+
+    /// 在已解锁保险库上执行只读/写操作（校验令牌 + 空闲超时）。
     pub fn with_vault<T>(
         &self,
         token: &str,
         f: impl FnOnce(&Vault) -> Result<T, VaultError>,
     ) -> Result<T, ApiError> {
+        self.check_and_touch(token)?;
         let guard = self
             .session
             .lock()
@@ -134,9 +190,6 @@ impl AppState {
         let Some(unlocked) = guard.as_ref() else {
             return Err(ApiError::Locked);
         };
-        if unlocked.token != token {
-            return Err(ApiError::Unauthorized);
-        }
         f(&unlocked.vault).map_err(ApiError::from_vault)
     }
 
@@ -150,6 +203,7 @@ impl AppState {
         master_password: &str,
         f: impl FnOnce(&Vault) -> Result<T, VaultError>,
     ) -> Result<T, ApiError> {
+        self.check_and_touch(token)?;
         let guard = self
             .session
             .lock()
@@ -157,9 +211,6 @@ impl AppState {
         let Some(unlocked) = guard.as_ref() else {
             return Err(ApiError::Locked);
         };
-        if unlocked.token != token {
-            return Err(ApiError::Unauthorized);
-        }
         let verified = unlocked
             .vault
             .unlock_second_factor(master_password)
@@ -175,5 +226,38 @@ impl AppState {
     /// 当前是否已解锁（用于状态查询）。
     pub fn is_unlocked(&self) -> bool {
         self.session.lock().map(|g| g.is_some()).unwrap_or(false)
+    }
+}
+
+/// 判断会话是否因空闲超时（纯函数，便于测试）。
+///
+/// `timeout_secs == 0` 表示关闭自动锁定。
+pub(crate) fn is_idle_expired(last_activity_ms: u64, now_ms: u64, timeout_secs: u64) -> bool {
+    timeout_secs > 0 && now_ms.saturating_sub(last_activity_ms) > timeout_secs.saturating_mul(1000)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_idle_expired;
+
+    #[test]
+    fn disabled_timeout_never_expires() {
+        assert!(!is_idle_expired(0, u64::MAX, 0));
+    }
+
+    #[test]
+    fn exactly_at_threshold_is_still_alive() {
+        // 边界：恰好等于阈值不算过期（判定用 `>` 而非 `>=`）
+        assert!(!is_idle_expired(0, 300_000, 300));
+    }
+
+    #[test]
+    fn just_over_threshold_expires() {
+        assert!(is_idle_expired(0, 300_001, 300));
+    }
+
+    #[test]
+    fn recent_activity_keeps_session_alive() {
+        assert!(!is_idle_expired(299_000, 300_000, 300));
     }
 }

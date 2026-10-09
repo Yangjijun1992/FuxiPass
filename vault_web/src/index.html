@@ -199,6 +199,7 @@
         <button onclick="loadCompliance()">数据概览</button>
         <button class="danger" onclick="doPurge()">删除全部数据</button>
       </div>
+      <div id="idle-info" class="muted" style="margin:4px 0 8px"></div>
       <p class="muted" style="font-size:12px;margin-top:8px">
         本应用为<b>本地零知识存储</b>：数据仅存于本机数据库并以字段级 AES-256-GCM 加密；
         主密码与恢复密钥不出本机。你可随时<b>导出加密备份</b>（上方）行使数据可携带权，
@@ -258,7 +259,14 @@ async function api(path, opts = {}) {
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
+    const code = data && data.error ? data.error.code : '';
     const m = data && data.error ? data.error.message : res.statusText;
+    if (code === 'SESSION_EXPIRED') {
+      TOKEN = null;
+      await refresh();
+      msg('会话因长时间空闲已自动锁定，请重新解锁', 'warn');
+      throw new Error('会话已锁定');
+    }
     throw new Error(m);
   }
   return data;
@@ -295,8 +303,29 @@ function applyLockState(status) {
   lockCountdown = setInterval(paint, 1000);
 }
 
+/* ---------- 空闲自动锁定（T4.6） ---------- */
+let idleTimer = null;
+let idleTimeoutSecs = 0;
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  if (!TOKEN || idleTimeoutSecs <= 0) return;
+  idleTimer = setTimeout(async () => {
+    try { await api('/api/lock', { method: 'POST' }); } catch (e) { /* 已锁定 */ }
+    TOKEN = null;
+    await refresh();
+    msg('已因长时间空闲自动锁定', 'warn');
+  }, idleTimeoutSecs * 1000);
+}
+
+for (const ev of ['click', 'keydown', 'mousemove']) {
+  document.addEventListener(ev, resetIdleTimer, { passive: true });
+}
+
 async function refresh() {
   const s = await api('/api/status');
+  idleTimeoutSecs = s.idle_timeout_secs || 0;
+  resetIdleTimer();
   show(s.initialized ? (s.unlocked ? 'main' : 'lock') : 'init');
   if (s.initialized && !s.unlocked) {
     applyLockState(s);
@@ -339,6 +368,7 @@ async function doUnlock() {
     document.getElementById('unlock-pw').value = '';
     msg('');
     await refresh();
+    resetIdleTimer();
   } catch (e) {
     msg('解锁失败：' + e.message, 'err');
     await refresh();
@@ -713,6 +743,12 @@ async function openSettings() {
     const h = await api('/api/hint');
     document.getElementById('hint-input').value = h.hint || '';
   } catch (e) { /* 忽略 */ }
+  const info = document.getElementById('idle-info');
+  if (info) {
+    info.textContent = idleTimeoutSecs > 0
+      ? `空闲 ${idleTimeoutSecs} 秒后自动锁定（服务端强制）`
+      : '⚠️ 自动锁定已关闭（启动时未加 --idle-timeout，不推荐）';
+  }
   await loadCompliance();
 }
 

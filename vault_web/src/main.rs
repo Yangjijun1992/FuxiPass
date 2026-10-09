@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared = Arc::new(AppState {
         db_path: config.db_path.clone(),
         session: Mutex::new(None),
+        idle_timeout_secs: config.idle_timeout_secs,
     });
 
     let protected = Router::new()
@@ -82,6 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("FuxiPass 本地验证界面");
     println!("  数据库 : {}", config.db_path.display());
     println!("  访问   : http://127.0.0.1:{}", config.port);
+    if config.idle_timeout_secs > 0 {
+        println!("  自动锁定: 空闲 {} 秒后", config.idle_timeout_secs);
+    } else {
+        println!("  自动锁定: 已关闭（不推荐）");
+    }
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -94,12 +100,16 @@ struct Config {
     db_path: PathBuf,
     port: u16,
     seed_demo: Option<String>,
+    /// 空闲自动锁定秒数（0 = 关闭）。
+    idle_timeout_secs: u64,
 }
 
 fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
     let mut db_path = PathBuf::from("fuxipass.vault.db");
     let mut port: u16 = 8787;
     let mut seed_demo = None;
+    // 默认 5 分钟：与 PRD「闲置即锁定」一致；浏览器无法可靠感知切后台，故以请求空闲为准。
+    let mut idle_timeout_secs: u64 = 300;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -110,6 +120,13 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
             "--port" => {
                 i += 1;
                 port = args.get(i).ok_or("--port 需要一个端口参数")?.parse()?;
+            }
+            "--idle-timeout" => {
+                i += 1;
+                idle_timeout_secs = args
+                    .get(i)
+                    .ok_or("--idle-timeout 需要秒数（0 表示关闭）")?
+                    .parse()?;
             }
             "--seed-demo" => {
                 i += 1;
@@ -127,6 +144,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
         db_path,
         port,
         seed_demo,
+        idle_timeout_secs,
     })
 }
 
@@ -135,6 +153,7 @@ fn print_help() {
     println!("  --db <路径>              保险库数据库路径（默认 fuxipass.vault.db）");
     println!("  --port <端口>            监听端口（默认 8787，仅绑定 127.0.0.1）");
     println!("  --seed-demo <主密码>     若库不存在则创建并写入演示数据");
+    println!("  --idle-timeout <秒>      空闲自动锁定秒数（默认 300，0=关闭）");
 }
 
 fn seed_demo(path: &Path, master: &str) -> Result<(), Box<dyn std::error::Error>> {

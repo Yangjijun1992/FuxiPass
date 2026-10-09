@@ -17,16 +17,7 @@ pub async fn require_session(
     next: Next,
 ) -> Result<Response, ApiError> {
     let token = AppState::token_from(req.headers())?;
-    {
-        let guard = state
-            .session
-            .lock()
-            .map_err(|_| ApiError::Internal("session lock poisoned".to_owned()))?;
-        match guard.as_ref() {
-            Some(unlocked) if unlocked.token == token => {}
-            Some(_) => return Err(ApiError::Unauthorized),
-            None => return Err(ApiError::Locked),
-        }
-    }
+    // 校验令牌并刷新活跃时间；空闲超时会在此自动锁定。
+    state.check_and_touch(&token)?;
     Ok(next.run(req).await)
 }
