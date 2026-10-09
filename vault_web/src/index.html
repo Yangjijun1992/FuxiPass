@@ -183,7 +183,19 @@
         </div>
       </div>
 
-            <label style="margin-top:18px">备份与迁移（换机用）</label>
+            <label style="margin-top:18px">找回服务（邮箱绑定）</label>
+      <div id="recovery-info" class="muted" style="margin:4px 0 8px"></div>
+      <div class="row" id="recovery-bind-row">
+        <input id="recovery-contact" class="grow" placeholder="your@email.com">
+        <button onclick="doBindRecovery()">绑定</button>
+        <button id="recovery-unbind-btn" class="ghost danger hidden" onclick="doUnbindRecovery()">解除绑定</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:6px">
+        绑定后，忘记主密码时可通过邮箱验证 + <b>恢复密钥</b>找回。
+        服务端只保存<b>不可逆哈希</b>与<b>加密套件</b>，无法解密你的数据。
+      </p>
+
+      <label style="margin-top:18px">备份与迁移（换机用）</label>
       <p class="muted" style="margin:4px 0 8px">
         导出为<b>口令加密</b>的备份文件（文件内无任何明文）；在新机器上用「导入备份」恢复。
       </p>
@@ -678,6 +690,57 @@ async function exportAudit() {
   } catch (e) { msg('导出失败：' + e.message, 'err'); }
 }
 
+/* ---------- 找回服务绑定（T2.4） ---------- */
+async function loadRecoveryStatus() {
+  const info = document.getElementById('recovery-info');
+  const row = document.getElementById('recovery-bind-row');
+  const unbind = document.getElementById('recovery-unbind-btn');
+  if (!info || !row) return;
+  try {
+    const s = await api('/api/recovery/status');
+    if (!s.configured) {
+      info.textContent = '未配置找回服务（启动时加 --recovery-service <url> 后可用）';
+      row.classList.add('hidden');
+      return;
+    }
+    row.classList.remove('hidden');
+    info.textContent = s.bound
+      ? `✅ 已绑定 · 服务: ${s.service_url} · 记录前缀 ${s.contact_hash_prefix}…`
+      : `未绑定 · 服务: ${s.service_url}`;
+    if (unbind) unbind.classList.toggle('hidden', !s.bound);
+  } catch (e) { /* 忽略 */ }
+}
+
+async function doBindRecovery() {
+  const contact = (document.getElementById('recovery-contact').value || '').trim();
+  if (!contact) return msg('请先填写邮箱', 'err');
+  const mp = prompt('二次验证：请输入主密码');
+  if (mp === null) return;
+  try {
+    const r = await api('/api/recovery/bind', {
+      method: 'POST',
+      body: JSON.stringify({ contact, contact_type: 'email', master_password: mp })
+    });
+    msg(`已绑定找回邮箱：${r.contact_masked}（服务端只存哈希与密文）`);
+    document.getElementById('recovery-contact').value = '';
+    await loadRecoveryStatus();
+  } catch (e) { msg('绑定失败：' + e.message, 'err'); }
+}
+
+async function doUnbindRecovery() {
+  if (!confirm('解除绑定后，将无法通过邮箱找回主密码（恢复密钥仍然有效）。继续？')) return;
+  const mp = prompt('二次验证：请输入主密码');
+  if (mp === null) return;
+  try {
+    await api('/api/recovery/unbind', {
+      method: 'POST',
+      body: JSON.stringify({ master_password: mp })
+    });
+    msg('已解除本地绑定记录（服务端记录仍保留，可重新绑定覆盖）');
+    await loadRecoveryStatus();
+  } catch (e) { msg('解除失败：' + e.message, 'err'); }
+}
+
 /* ---------- 隐私与合规（T4.4） ---------- */
 async function loadCompliance() {
   try {
@@ -743,6 +806,7 @@ async function openSettings() {
     const h = await api('/api/hint');
     document.getElementById('hint-input').value = h.hint || '';
   } catch (e) { /* 忽略 */ }
+  await loadRecoveryStatus();
   const info = document.getElementById('idle-info');
   if (info) {
     info.textContent = idleTimeoutSecs > 0

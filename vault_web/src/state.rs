@@ -26,6 +26,8 @@ pub struct AppState {
     pub session: Mutex<Option<Unlocked>>,
     /// 空闲自动锁定秒数（`0` 表示关闭）。默认 300 秒（5 分钟）。
     pub idle_timeout_secs: u64,
+    /// 找回服务地址（未配置则关闭邮箱绑定入口）。
+    pub recovery_service_url: Option<String>,
 }
 
 impl Unlocked {

@@ -6,7 +6,9 @@
 mod api;
 mod api_compliance;
 mod api_data;
+mod api_recovery;
 mod middleware;
+mod recovery_client;
 mod state;
 
 use std::net::{Ipv4Addr, SocketAddr};
@@ -35,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         db_path: config.db_path.clone(),
         session: Mutex::new(None),
         idle_timeout_secs: config.idle_timeout_secs,
+        recovery_service_url: config.recovery_service_url.clone(),
     });
 
     let protected = Router::new()
@@ -63,6 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/audit/export", get(api_compliance::audit_export))
         .route("/api/compliance/summary", get(api_compliance::summary))
         .route("/api/vault/purge", post(api_compliance::purge))
+        .route("/api/recovery/status", get(api_recovery::status))
+        .route("/api/recovery/bind", post(api_recovery::bind))
+        .route("/api/recovery/unbind", post(api_recovery::unbind))
         .route_layer(axum_mw::from_fn_with_state(
             shared.clone(),
             middleware::require_session,
@@ -83,6 +89,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("FuxiPass 本地验证界面");
     println!("  数据库 : {}", config.db_path.display());
     println!("  访问   : http://127.0.0.1:{}", config.port);
+    if let Some(url) = &config.recovery_service_url {
+        println!("  找回服务: {url}");
+    } else {
+        println!("  找回服务: 未配置（邮箱绑定入口关闭）");
+    }
     if config.idle_timeout_secs > 0 {
         println!("  自动锁定: 空闲 {} 秒后", config.idle_timeout_secs);
     } else {
@@ -102,6 +113,8 @@ struct Config {
     seed_demo: Option<String>,
     /// 空闲自动锁定秒数（0 = 关闭）。
     idle_timeout_secs: u64,
+    /// 找回服务地址（可选）。
+    recovery_service_url: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
@@ -110,6 +123,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
     let mut seed_demo = None;
     // 默认 5 分钟：与 PRD「闲置即锁定」一致；浏览器无法可靠感知切后台，故以请求空闲为准。
     let mut idle_timeout_secs: u64 = 300;
+    let mut recovery_service_url: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -120,6 +134,11 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
             "--port" => {
                 i += 1;
                 port = args.get(i).ok_or("--port 需要一个端口参数")?.parse()?;
+            }
+            "--recovery-service" => {
+                i += 1;
+                recovery_service_url =
+                    Some(args.get(i).ok_or("--recovery-service 需要 URL")?.clone());
             }
             "--idle-timeout" => {
                 i += 1;
@@ -145,6 +164,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
         port,
         seed_demo,
         idle_timeout_secs,
+        recovery_service_url,
     })
 }
 
@@ -154,6 +174,7 @@ fn print_help() {
     println!("  --port <端口>            监听端口（默认 8787，仅绑定 127.0.0.1）");
     println!("  --seed-demo <主密码>     若库不存在则创建并写入演示数据");
     println!("  --idle-timeout <秒>      空闲自动锁定秒数（默认 300，0=关闭）");
+    println!("  --recovery-service <URL> 找回服务地址（如 http://127.0.0.1:8799），启用邮箱绑定");
 }
 
 fn seed_demo(path: &Path, master: &str) -> Result<(), Box<dyn std::error::Error>> {

@@ -7,13 +7,14 @@
 //! - v1：初始结构。
 //! - v2：`meta` 增加 `failed_attempts` / `locked_until`，用于防爆破退避锁定（T2.3）。
 //! - v3：`meta` 增加 `fdek_kdf` / `fdek_wrap`，用于高敏感字段的独立密钥 FDEK（T2.2）。
+//! - v4：`meta` 增加 `recovery_contact_hash`，记录已绑定的找回联系方式（T2.4）。
 
 use rusqlite::Connection;
 
 use crate::VaultError;
 
 /// 当前 schema 版本，便于后续迁移。
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_SQL: &str = r"
 PRAGMA foreign_keys = ON;
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS meta (
     fdek_kdf        TEXT,
     fdek_wrap       TEXT,
     fdek_wrap_recovery TEXT,
+    recovery_contact_hash TEXT,
     created_at      TEXT    NOT NULL
 );
 
@@ -98,6 +100,10 @@ pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
              ALTER TABLE meta ADD COLUMN locked_until TEXT;",
         )?;
         conn.execute("UPDATE meta SET schema_version = 2 WHERE id = 1", [])?;
+    }
+    if version < 4 {
+        conn.execute_batch("ALTER TABLE meta ADD COLUMN recovery_contact_hash TEXT;")?;
+        conn.execute("UPDATE meta SET schema_version = 4 WHERE id = 1", [])?;
     }
     if version < 3 {
         // 仅补列；FDEK 的生成与字段重封装发生在 unlock（那里才有主密码），见 fdek.rs。

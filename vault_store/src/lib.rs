@@ -19,6 +19,7 @@ pub mod import;
 pub mod import_parse;
 pub mod lockout;
 pub mod models;
+pub mod recovery_link;
 pub mod schema;
 pub mod secure_store;
 pub mod session;
@@ -34,6 +35,7 @@ pub use models::{
     masked_preview, AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, Importance,
     SecretFieldView,
 };
+pub use recovery_link::{contact_hash, RecoveryKit};
 pub use secure_store::{PlatformError, SecureStore, ACCOUNT_KEY_ID};
 pub use session::{Session, SessionError, SessionPolicy, UnlockMethod};
 pub use vault::{
