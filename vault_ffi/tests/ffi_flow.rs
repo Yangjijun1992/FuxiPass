@@ -18,7 +18,7 @@ use security_core::cipher::CryptoRng;
 use vault_ffi::{
     fuxipass_create_account, fuxipass_delete_account, fuxipass_get_account, fuxipass_last_error,
     fuxipass_list_accounts, fuxipass_lock, fuxipass_lock_status, fuxipass_reveal_secret,
-    fuxipass_string_free, fuxipass_unlock, fuxipass_update_account,
+    fuxipass_string_free, fuxipass_unlock, fuxipass_unlock_second_factor, fuxipass_update_account,
 };
 use vault_store::{initialize, AccountInput, Importance};
 
@@ -117,6 +117,11 @@ db_test!(unlock_list_create_reveal_update_delete_flow, {
     // SAFETY: handle 来自上面的 unlock，尚未释放。
     let empty = take(unsafe { fuxipass_list_accounts(handle) }).unwrap();
     assert_eq!(empty, "[]");
+
+    // 二次验证（FDEK）：样例含高敏感字段（二级密码），必须先解包 FDEK
+    // SAFETY: handle 有效；pw 由 CString 持有。
+    let code = unsafe { fuxipass_unlock_second_factor(handle, pw.as_ptr()) };
+    assert_eq!(code, 0, "二次验证应成功: {:?}", last_error());
 
     // 新建
     let input = CString::new(sample_json()).unwrap();

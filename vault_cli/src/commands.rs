@@ -38,6 +38,18 @@ fn require_db(args: &[String]) -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(PathBuf::from(flag(args, "--db").ok_or("缺少 --db")?))
 }
 
+/// 解锁并开启二次验证（读写高敏感字段所需，等价于用户确认一次主密码）。
+fn unlock_with_second_factor(
+    db: &Path,
+    password: &str,
+) -> Result<Vault, Box<dyn std::error::Error>> {
+    let vault = unlock(db, password)?;
+    if !vault.unlock_second_factor(password)? {
+        return Err("二次验证失败：主密码不正确".into());
+    }
+    Ok(vault)
+}
+
 /// 打开已有库；若不存在则初始化并打印恢复密钥。
 fn open_or_init(db: &Path, password: &str) -> Result<Vault, Box<dyn std::error::Error>> {
     if db.exists() {
@@ -68,7 +80,11 @@ pub fn cmd_import(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut text = String::new();
     fs::File::open(text_path)?.read_to_string(&mut text)?;
 
+    // 导入可能包含高敏感字段，需先完成二次验证。
     let vault = open_or_init(&db, &password)?;
+    if !vault.unlock_second_factor(&password)? {
+        return Err("二次验证失败：主密码不正确".into());
+    }
     let candidates = parse_notes(&text);
     println!("解析出 {} 条候选", candidates.len());
 
@@ -119,7 +135,7 @@ pub fn cmd_export(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "请输入备份口令（可与主密码不同）",
     )?;
 
-    let vault = unlock(&db, &password)?;
+    let vault = unlock_with_second_factor(&db, &password)?;
     let data = vault.export_backup(&backup_pw)?;
     fs::write(out, &data)?;
     println!("已导出加密备份：{out}（{} 字节）", data.len());
@@ -134,7 +150,11 @@ pub fn cmd_import_backup(args: &[String]) -> Result<(), Box<dyn std::error::Erro
     let password = master_password(args)?;
     let backup_pw = read_secret(args, "--backup-passphrase-file", "请输入备份口令")?;
 
+    // 备份可能含高敏感字段，需先完成二次验证。
     let vault = open_or_init(&db, &password)?;
+    if !vault.unlock_second_factor(&password)? {
+        return Err("二次验证失败：主密码不正确".into());
+    }
     let data = fs::read(input)?;
     let outcome = vault.import_backup(&data, &backup_pw)?;
     report(&outcome);
@@ -148,7 +168,8 @@ pub fn cmd_change_password(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let password = master_password(args)?;
     let new_password = read_secret(args, "--new-password-file", "请输入新主密码")?;
 
-    let mut vault = unlock(&db, &password)?;
+    // 改密需重封装 FDEK，因此必须先完成二次验证（使用当前主密码）。
+    let mut vault = unlock_with_second_factor(&db, &password)?;
     vault.change_master_password(&new_password)?;
     println!("主密码已更新（仅重包 DEK，数据未重新加密）。");
     Ok(())

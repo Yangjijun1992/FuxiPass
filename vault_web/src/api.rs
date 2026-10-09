@@ -120,21 +120,6 @@ pub struct RecoveryKeyResp {
     pub recovery_key: String,
 }
 
-pub(crate) fn require_second_factor(
-    state: &AppState,
-    master_password: &str,
-) -> Result<(), ApiError> {
-    let verified = vault_store::verify_master_password(&state.db_path, master_password)
-        .map_err(ApiError::from_vault)?;
-    if verified {
-        Ok(())
-    } else {
-        Err(ApiError::BadRequest(
-            "second-factor verification failed".to_owned(),
-        ))
-    }
-}
-
 fn new_token() -> String {
     URL_SAFE_NO_PAD.encode(CryptoRng::bytes(32))
 }
@@ -185,8 +170,9 @@ pub async fn regenerate_recovery_key(
     Json(req): Json<MasterPasswordReq>,
 ) -> Result<Json<RecoveryKeyResp>, ApiError> {
     let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let recovery_key = state.with_vault(&token, |v| v.regenerate_recovery_key())?;
+    let recovery_key = state.with_second_factor(&token, &req.master_password, |v| {
+        v.regenerate_recovery_key()
+    })?;
     Ok(Json(RecoveryKeyResp { recovery_key }))
 }
 
@@ -319,13 +305,8 @@ pub async fn reveal(
     Json(req): Json<RevealReq>,
 ) -> Result<Json<RevealResp>, ApiError> {
     let token = AppState::token_from(&headers)?;
-    let verified = vault_store::verify_master_password(&state.db_path, &req.master_password)
-        .map_err(ApiError::from_vault)?;
-    if !verified {
-        return Err(ApiError::BadRequest(
-            "second-factor verification failed".to_owned(),
-        ));
-    }
-    let value = state.with_vault(&token, |v| v.reveal_secret(&req.account_id, req.field_type))?;
+    let value = state.with_second_factor(&token, &req.master_password, |v| {
+        v.reveal_secret(&req.account_id, req.field_type)
+    })?;
     Ok(Json(RevealResp { value }))
 }

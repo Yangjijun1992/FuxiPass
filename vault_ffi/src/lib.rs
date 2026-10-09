@@ -27,11 +27,9 @@ use vault_store::FieldType;
 use crate::convert::{cstr_to_string, free_c_string, handle_ref, to_c_string};
 use crate::error::{clone_last_error, guard, store_error, FfiError};
 
-/// 不透明句柄：内部持有已解锁的保险库与其数据库路径。
+/// 不透明句柄：内部持有已解锁的保险库。
 pub struct FuxiHandle {
-    /// 数据库路径（供二次验证等独立操作使用）。
-    db_path: std::path::PathBuf,
-    /// 已解锁的保险库。
+    /// 已解锁的保险库（二次验证亦在其上进行，以便解包 FDEK）。
     vault: vault_store::Vault,
 }
 
@@ -59,10 +57,7 @@ pub unsafe extern "C" fn fuxipass_unlock(
         };
         let vault =
             vault_store::unlock(Path::new(&path), &password).map_err(FfiError::from_vault)?;
-        Ok(Box::into_raw(Box::new(FuxiHandle {
-            db_path: Path::new(&path).to_path_buf(),
-            vault,
-        })))
+        Ok(Box::into_raw(Box::new(FuxiHandle { vault })))
     });
     match result {
         Ok(handle) => handle,
@@ -278,8 +273,11 @@ pub unsafe extern "C" fn fuxipass_reveal_secret(
         };
         let field = FieldType::parse(&field_raw)
             .ok_or_else(|| FfiError::bad_request(format!("未知字段类型: {field_raw}")))?;
-        // 二次验证：与 Web 接口一致，必须先校验主密码再揭示（且同样受退避锁定约束）。
-        let verified = vault_store::verify_master_password(&state.db_path, &password)
+        // 二次验证：与 Web 接口一致，必须先校验主密码（并解包 FDEK）再揭示，
+        // 且同样受退避锁定约束。
+        let verified = state
+            .vault
+            .unlock_second_factor(&password)
             .map_err(FfiError::from_vault)?;
         if !verified {
             return Err(FfiError {
@@ -299,6 +297,42 @@ pub unsafe extern "C" fn fuxipass_reveal_secret(
         Err(err) => {
             store_error(&err);
             ptr::null_mut()
+        }
+    }
+}
+
+/// 二次验证：用主密码解包 FDEK，使高敏感字段可读写。
+///
+/// 返回 `0` 成功；`-1` 失败（密码错误时返回 `-2`，可据此提示用户）。
+///
+/// # Safety
+///
+/// [分类 3/8] `handle` 为有效且未释放的句柄；`master_password` 为合法 C 字符串或 `NULL`。
+#[no_mangle]
+pub unsafe extern "C" fn fuxipass_unlock_second_factor(
+    handle: *mut FuxiHandle,
+    master_password: *const c_char,
+) -> c_int {
+    let result = guard(|| {
+        // SAFETY: [分类 3/8] 本函数 `# Safety` 契约保证 handle 有效且未释放、
+        // master_password 合法或为 NULL。
+        let (state, password) = unsafe {
+            (
+                handle_ref(handle)?,
+                cstr_to_string(master_password, "master_password")?,
+            )
+        };
+        match state.vault.unlock_second_factor(&password) {
+            Ok(true) => Ok(0),
+            Ok(false) => Ok(-2),
+            Err(err) => Err(FfiError::from_vault(err)),
+        }
+    });
+    match result {
+        Ok(code) => code,
+        Err(err) => {
+            store_error(&err);
+            -1
         }
     }
 }

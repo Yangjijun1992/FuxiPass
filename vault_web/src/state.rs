@@ -140,6 +140,38 @@ impl AppState {
         f(&unlocked.vault).map_err(ApiError::from_vault)
     }
 
+    /// 二次验证 + 在已解锁保险库上执行操作。
+    ///
+    /// 与 `with_vault` 的区别：先要求主密码校验（并解包 FDEK，使高敏感字段可读写）。
+    /// 校验受退避锁定约束；失败返回 `BAD_REQUEST`，锁定返回 `TOO_MANY_ATTEMPTS`。
+    pub fn with_second_factor<T>(
+        &self,
+        token: &str,
+        master_password: &str,
+        f: impl FnOnce(&Vault) -> Result<T, VaultError>,
+    ) -> Result<T, ApiError> {
+        let guard = self
+            .session
+            .lock()
+            .map_err(|_| ApiError::Internal("session lock poisoned".to_owned()))?;
+        let Some(unlocked) = guard.as_ref() else {
+            return Err(ApiError::Locked);
+        };
+        if unlocked.token != token {
+            return Err(ApiError::Unauthorized);
+        }
+        let verified = unlocked
+            .vault
+            .unlock_second_factor(master_password)
+            .map_err(ApiError::from_vault)?;
+        if !verified {
+            return Err(ApiError::BadRequest(
+                "second-factor verification failed".to_owned(),
+            ));
+        }
+        f(&unlocked.vault).map_err(ApiError::from_vault)
+    }
+
     /// 当前是否已解锁（用于状态查询）。
     pub fn is_unlocked(&self) -> bool {
         self.session.lock().map(|g| g.is_some()).unwrap_or(false)

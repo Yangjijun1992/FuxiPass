@@ -12,7 +12,6 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use vault_store::{ImportCandidate, ImportOutcome};
 
-use crate::api::require_second_factor;
 use crate::state::{ApiError, AppState};
 
 /// 导入解析请求。
@@ -77,8 +76,9 @@ pub async fn import_commit(
     Json(req): Json<ImportCommitReq>,
 ) -> Result<Json<ImportOutcome>, ApiError> {
     let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let outcome = state.with_vault(&token, |v| Ok(v.import_candidates(&req.candidates)))?;
+    let outcome = state.with_second_factor(&token, &req.master_password, |v| {
+        Ok(v.import_candidates(&req.candidates))
+    })?;
     Ok(Json(outcome))
 }
 
@@ -89,8 +89,9 @@ pub async fn export_backup(
     Json(req): Json<BackupExportReq>,
 ) -> Result<Response, ApiError> {
     let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let data = state.with_vault(&token, |v| v.export_backup(&req.passphrase))?;
+    let data = state.with_second_factor(&token, &req.master_password, |v| {
+        v.export_backup(&req.passphrase)
+    })?;
     let mut response = Response::new(Body::from(data));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -113,8 +114,7 @@ pub async fn import_backup(
     Json(req): Json<BackupImportReq>,
 ) -> Result<Json<ImportOutcome>, ApiError> {
     let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let outcome = state.with_vault(&token, |v| {
+    let outcome = state.with_second_factor(&token, &req.master_password, |v| {
         v.import_backup(req.data.as_bytes(), &req.passphrase)
     })?;
     Ok(Json(outcome))

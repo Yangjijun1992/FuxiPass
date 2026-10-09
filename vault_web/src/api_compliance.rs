@@ -10,7 +10,6 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use vault_store::{AuditEntry, DataSummary};
 
-use crate::api::require_second_factor;
 use crate::state::{ApiError, AppState};
 
 /// 删除全部数据时必须逐字输入的确认短语。
@@ -65,8 +64,8 @@ pub async fn purge(
         )));
     }
     let token = AppState::token_from(&headers)?;
-    require_second_factor(&state, &req.master_password)?;
-    let purged_accounts = state.with_vault(&token, |v| v.purge_all_accounts())?;
+    let purged_accounts =
+        state.with_second_factor(&token, &req.master_password, |v| v.purge_all_accounts())?;
     Ok(Json(PurgeResp { purged_accounts }))
 }
 
