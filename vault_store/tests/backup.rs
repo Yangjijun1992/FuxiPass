@@ -63,6 +63,7 @@ fn fresh_vault(tag: &str) -> (TempVault, Vault) {
     let tv = TempVault::new(tag);
     let _ = initialize(tv.path(), MASTER).unwrap();
     let vault = unlock(tv.path(), MASTER).unwrap();
+    assert!(vault.unlock_second_factor(MASTER).unwrap());
     (tv, vault)
 }
 
@@ -193,6 +194,8 @@ fn merging_backup_into_non_empty_vault_adds_accounts() {
     let target_tv = TempVault::new("merge_dst");
     let _ = initialize(target_tv.path(), MASTER).unwrap();
     let target = unlock(target_tv.path(), MASTER).unwrap();
+    // 目标库也要解锁二次验证：用例中的输入含高敏感字段（二级/支付密码）。
+    assert!(target.unlock_second_factor(MASTER).unwrap());
     let mut other = rich_input();
     other.app_name = "淘宝".to_owned();
     let _ = target.create_account(&other).unwrap();

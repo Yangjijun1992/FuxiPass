@@ -66,5 +66,7 @@ pub fn bootstrapped() -> (TempVault, Vault, String) {
     let tv = TempVault::new();
     let init = initialize(tv.path(), MASTER).unwrap();
     let vault = unlock(tv.path(), MASTER).unwrap();
+    // FDEK（T2.2）：高敏感字段需二次验证后才可读写；夹具默认解锁以便覆盖完整字段。
+    assert!(vault.unlock_second_factor(MASTER).unwrap());
     (tv, vault, init.recovery_key_display)
 }

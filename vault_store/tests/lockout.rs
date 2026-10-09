@@ -68,6 +68,13 @@ fn bootstrapped() -> (TempVault, String) {
     (tv, init.recovery_key_display)
 }
 
+/// 解锁并开启二次验证（高敏感字段写入所需）。
+fn unlocked_2fa(path: &Path) -> vault_store::Vault {
+    let vault = unlock(path, MASTER).unwrap();
+    assert!(vault.unlock_second_factor(MASTER).unwrap());
+    vault
+}
+
 /// 断言结果为「锁定」，返回剩余秒数。避免 `unwrap_err` 要求 `Vault: Debug`。
 fn expect_locked(result: Result<vault_store::Vault, VaultError>) -> u64 {
     match result {
@@ -161,7 +168,7 @@ fn lock_status_reports_remaining_time() {
 #[test]
 fn many_failures_never_destroy_user_data() {
     let (tv, _rk) = bootstrapped();
-    let vault = unlock(tv.path(), MASTER).unwrap();
+    let vault = unlocked_2fa(tv.path());
     let id = vault.create_account(&sample_input()).unwrap();
     drop(vault);
 
@@ -170,7 +177,7 @@ fn many_failures_never_destroy_user_data() {
         expire_lock(tv.path());
     }
 
-    let vault = unlock(tv.path(), MASTER).unwrap();
+    let vault = unlocked_2fa(tv.path());
     assert_eq!(vault.list_accounts().unwrap().len(), 1, "数据必须完好");
     assert_eq!(
         vault.reveal_secret(&id, FieldType::LoginPassword).unwrap(),
@@ -197,7 +204,7 @@ fn recovery_key_still_works_while_locked() {
 #[test]
 fn second_factor_verification_is_also_rate_limited() {
     let (tv, _rk) = bootstrapped();
-    let _vault = unlock(tv.path(), MASTER).unwrap();
+    let _vault = unlocked_2fa(tv.path());
     for _ in 0..4 {
         assert!(!verify_master_password(tv.path(), "wrong").unwrap());
     }
@@ -211,7 +218,7 @@ fn second_factor_verification_is_also_rate_limited() {
 #[test]
 fn correct_second_factor_resets_counter() {
     let (tv, _rk) = bootstrapped();
-    let _vault = unlock(tv.path(), MASTER).unwrap();
+    let _vault = unlocked_2fa(tv.path());
     assert!(!verify_master_password(tv.path(), "wrong").unwrap());
     assert!(verify_master_password(tv.path(), MASTER).unwrap());
     assert_eq!(lock_status(tv.path()).unwrap().failed_attempts, 0);

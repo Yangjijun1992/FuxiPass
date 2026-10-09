@@ -13,12 +13,19 @@ use common::{bootstrapped, sample_input, TempVault, MASTER};
 fn change_master_password_preserves_data() {
     let (tv, mut vault, _rk) = bootstrapped();
     let id = vault.create_account(&sample_input()).unwrap();
+    // 启用 FDEK 后改密需先完成二次验证（以便重封装 FDEK）
+    assert!(vault.unlock_second_factor(common::MASTER).unwrap());
     vault.change_master_password("new-master-pw").unwrap();
     drop(vault);
 
     // 旧密码失效，新密码可解锁，且数据（含密文）完好。
     assert!(unlock(tv.path(), MASTER).is_err());
     let vault = unlock(tv.path(), "new-master-pw").unwrap();
+    // 关键断言：FDEK 已用新密码重新封装 —— 用新密码做二次验证后仍能读出高敏感字段。
+    assert!(
+        vault.unlock_second_factor("new-master-pw").unwrap(),
+        "改密后必须能用新密码解包 FDEK"
+    );
     assert_eq!(
         vault
             .reveal_secret(&id, FieldType::SecondaryPassword)
@@ -37,6 +44,14 @@ fn recover_with_recovery_key_resets_password_and_keeps_data() {
     recover(tv.path(), &recovery_key, "recovered-master").unwrap();
     let vault = unlock(tv.path(), "recovered-master").unwrap();
     assert_eq!(vault.list_accounts().unwrap().len(), 1);
+    // 关键断言：恢复后 FDEK 已用新密码重新封装，高敏感字段仍可读。
+    assert!(vault.unlock_second_factor("recovered-master").unwrap());
+    assert_eq!(
+        vault
+            .reveal_secret(&id, FieldType::SecondaryPassword)
+            .unwrap(),
+        "888444"
+    );
     assert_eq!(
         vault.reveal_secret(&id, FieldType::LoginPassword).unwrap(),
         "LoginPw!234"
@@ -86,6 +101,8 @@ fn regenerating_recovery_key_invalidates_previous_key() {
     let (tv, vault, old_key) = bootstrapped();
     let id = vault.create_account(&sample_input()).unwrap();
 
+    // 启用 FDEK 后换恢复密钥需先完成二次验证（以便重封装 FDEK 的恢复包裹）
+    assert!(vault.unlock_second_factor(common::MASTER).unwrap());
     let new_key = vault.regenerate_recovery_key().unwrap();
     assert_ne!(old_key, new_key);
     drop(vault);
