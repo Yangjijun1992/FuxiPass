@@ -168,7 +168,7 @@ fn server_side_storage_has_no_plaintext_contact() {
     let stored = binding();
     assert!(!stored.contact_hash.contains('@'), "不得存明文邮箱");
     assert!(
-        !stored.contact_hash.contains("westlake") && !stored.contact_hash.contains("yangjijun"),
+        !stored.contact_hash.contains("example") && !stored.contact_hash.contains("user"),
         "哈希中不得残留明文片段"
     );
     assert!(

@@ -103,6 +103,7 @@ fn ignores_comment_lines_starting_with_hash() {
 
 #[test]
 fn distinguishes_payment_secondary_and_api_key_fields() {
+    // 使用**合成**证件号（切勿在代码/测试中放入真实个人信息）
     let c = first("中国银行\n账号：110101199001011234\n登录密码：LoginPw1\n二级密码：SecPw2\n支付密码：PayPw3\n密钥：sk-abc123");
     assert_eq!(c.username.as_deref(), Some("110101199001011234"));
     assert_eq!(c.login_password.as_deref(), Some("LoginPw1"));
