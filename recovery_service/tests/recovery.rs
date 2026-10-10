@@ -27,7 +27,7 @@ const NOW: u64 = 1_800_000_000_000;
 #[test]
 fn bind_challenge_verify_and_redeem_returns_only_ciphertext() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
 
     let issued = svc.challenge(CONTACT_HASH, NOW).unwrap();
     assert_eq!(issued.ttl_sec, CODE_TTL_SECS);
@@ -58,7 +58,7 @@ fn unbound_contact_cannot_request_challenge() {
 #[test]
 fn wrong_code_is_rejected_and_decrements_attempts() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     let issued = svc.challenge(CONTACT_HASH, NOW).unwrap();
 
     for _ in 0..(MAX_VERIFY_ATTEMPTS - 1) {
@@ -84,7 +84,7 @@ fn wrong_code_is_rejected_and_decrements_attempts() {
 #[test]
 fn code_is_single_use() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     let issued = svc.challenge(CONTACT_HASH, NOW).unwrap();
     let code = issued.dev_code.clone().unwrap();
 
@@ -101,7 +101,7 @@ fn code_is_single_use() {
 #[test]
 fn expired_code_is_rejected() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     let issued = svc.challenge(CONTACT_HASH, NOW).unwrap();
     let code = issued.dev_code.clone().unwrap();
     let err = svc
@@ -118,7 +118,7 @@ fn expired_code_is_rejected() {
 #[test]
 fn token_is_single_use_and_expires() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     let issued = svc.challenge(CONTACT_HASH, NOW).unwrap();
     let code = issued.dev_code.clone().unwrap();
     let _ = svc
@@ -146,7 +146,7 @@ fn token_is_single_use_and_expires() {
 #[test]
 fn challenges_are_rate_limited_per_window() {
     let svc = RecoveryService::new(true);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     let mut issued = Vec::new();
     for i in 0..MAX_CHALLENGES_PER_WINDOW {
         issued.push(svc.challenge(CONTACT_HASH, NOW + i as u64).unwrap());
@@ -162,7 +162,7 @@ fn challenges_are_rate_limited_per_window() {
 #[test]
 fn server_side_storage_has_no_plaintext_contact() {
     let svc = RecoveryService::new(false);
-    svc.bind(binding());
+    svc.bind(binding()).unwrap();
     // 服务端只保存绑定，且其字段仅含哈希 + 密文包裹
     assert_eq!(svc.binding_count(), 1);
     let stored = binding();

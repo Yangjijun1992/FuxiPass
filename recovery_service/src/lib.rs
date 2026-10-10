@@ -16,8 +16,13 @@
 
 pub mod api;
 
+pub mod store;
+
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use crate::store::BindingStore;
 
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +68,9 @@ pub enum RecoveryError {
     /// 令牌无效或已过期。
     #[error("invalid or expired token")]
     InvalidToken,
+    /// 存储层错误（读写绑定失败）。
+    #[error("storage error: {0}")]
+    Storage(String),
 }
 
 /// 验证码下发结果（`dev_code` 仅供开发/测试；生产应经邮件/短信通道下发且不返回）。
@@ -114,16 +122,19 @@ struct Token {
     used: bool,
 }
 
-/// 内存态找回服务（生产可替换为持久化实现，接口保持不变）。
+/// 找回服务。
+///
+/// - **绑定**走 [`BindingStore`]（可持久化，重启不丢）；
+/// - **挑战 / 令牌 / 限流记录** 留在内存（短寿命，重启失效更安全）。
 pub struct RecoveryService {
-    inner: Mutex<Inner>,
+    store: Arc<dyn BindingStore>,
+    ephemeral: Mutex<Ephemeral>,
     /// 是否回显验证码（仅开发/测试开启）。
     pub dev_echo_code: bool,
 }
 
 #[derive(Default)]
-struct Inner {
-    bindings: HashMap<String, Binding>,
+struct Ephemeral {
     challenges: HashMap<String, Challenge>,
     tokens: HashMap<String, Token>,
     /// 挑战发起记录：contact_hash → 时间戳列表（用于限流）。
@@ -131,25 +142,41 @@ struct Inner {
 }
 
 impl RecoveryService {
-    /// 创建服务实例。`dev_echo_code=true` 时 `challenge` 会回显验证码（仅供测试）。
+    /// 内存态实例（测试与临时使用；重启丢绑定）。
+    ///
+    /// `dev_echo_code=true` 时 `challenge` 会回显验证码（仅供测试）。
     pub fn new(dev_echo_code: bool) -> Self {
         Self {
-            inner: Mutex::new(Inner::default()),
+            store: Arc::new(store::MemoryBindingStore::new()),
+            ephemeral: Mutex::new(Ephemeral::default()),
             dev_echo_code,
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+    /// **持久化实例**：绑定写入指定 SQLite 文件，重启不丢。
+    ///
+    /// # Errors
+    /// 文件不可读写或建表失败时返回 [`RecoveryError::Storage`]。
+    pub fn open(dev_echo_code: bool, db_path: &Path) -> Result<Self, RecoveryError> {
+        Ok(Self {
+            store: Arc::new(store::SqliteBindingStore::open(db_path)?),
+            ephemeral: Mutex::new(Ephemeral::default()),
+            dev_echo_code,
+        })
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Ephemeral> {
         // 说明：唯一可能的中毒来源是持有锁时 panic；本实现内无 panic 路径，
         // 因此用 `unwrap_or_else` 复位而非向上抛错。
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        self.ephemeral.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// 绑定联系方式哈希与加密包裹（重复绑定覆盖旧值）。
-    pub fn bind(&self, binding: Binding) {
-        self.lock()
-            .bindings
-            .insert(binding.contact_hash.clone(), binding);
+    ///
+    /// # Errors
+    /// 存储写入失败时返回 [`RecoveryError::Storage`]。
+    pub fn bind(&self, binding: Binding) -> Result<(), RecoveryError> {
+        self.store.upsert(&binding)
     }
 
     /// 发起挑战：由服务端用 CSPRNG 生成一次性验证码与请求 ID。
@@ -160,11 +187,11 @@ impl RecoveryService {
         contact_hash: &str,
         now_ms: u64,
     ) -> Result<ChallengeIssued, RecoveryError> {
-        let mut inner = self.lock();
-        if !inner.bindings.contains_key(contact_hash) {
+        if self.store.get(contact_hash)?.is_none() {
             // 不区分「未绑定」与「已绑定」，避免账号枚举；此处返回统一错误由调用方决定。
             return Err(RecoveryError::NotBound);
         }
+        let mut inner = self.lock();
         let window_start = now_ms.saturating_sub(CHALLENGE_WINDOW_SECS * 1000);
         let log = inner
             .challenge_log
@@ -222,10 +249,11 @@ impl RecoveryService {
         let contact_hash = challenge.contact_hash.clone();
         inner.challenges.remove(request_id);
 
-        let Some(binding) = inner.bindings.get(&contact_hash) else {
-            return Err(RecoveryError::NotBound);
-        };
-        let recoverywrap = binding.recoverywrap.clone();
+        let recoverywrap = self
+            .store
+            .get(&contact_hash)?
+            .ok_or(RecoveryError::NotBound)?
+            .recoverywrap;
         inner.tokens.insert(
             token.clone(),
             Token {
@@ -252,16 +280,16 @@ impl RecoveryService {
         }
         entry.used = true;
         let contact_hash = entry.contact_hash.clone();
-        inner
-            .bindings
-            .get(&contact_hash)
-            .map(|b| b.recoverywrap.clone())
-            .ok_or(RecoveryError::NotBound)
+        Ok(self
+            .store
+            .get(&contact_hash)?
+            .ok_or(RecoveryError::NotBound)?
+            .recoverywrap)
     }
 
     /// 仅用于测试/审计：服务端持有的绑定数量。
     pub fn binding_count(&self) -> usize {
-        self.lock().bindings.len()
+        self.store.count().unwrap_or(0)
     }
 
     /// 运行统计 `(绑定数, 待验证挑战数, 有效令牌数)`。
@@ -269,11 +297,8 @@ impl RecoveryService {
     /// 只返回**计数**，不返回任何哈希/密文，避免通过该接口枚举联系人。
     pub fn stats(&self) -> (usize, usize, usize) {
         let inner = self.lock();
-        (
-            inner.bindings.len(),
-            inner.challenges.len(),
-            inner.tokens.len(),
-        )
+        let bindings = self.store.count().unwrap_or(0);
+        (bindings, inner.challenges.len(), inner.tokens.len())
     }
 }
 

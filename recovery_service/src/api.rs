@@ -77,6 +77,11 @@ impl IntoResponse for ApiError {
             RecoveryError::IncorrectCode => (StatusCode::BAD_REQUEST, "验证码错误"),
             RecoveryError::CodeExpired => (StatusCode::BAD_REQUEST, "验证码已过期或不存在"),
             RecoveryError::InvalidToken => (StatusCode::UNAUTHORIZED, "令牌无效或已过期"),
+            // 存储故障属服务端问题；对外只给通用信息，细节留在服务端日志
+            RecoveryError::Storage(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "服务暂时不可用，请稍后重试",
+            ),
         };
         let body = Json(serde_json::json!({ "error": { "message": message } }));
         (status, body).into_response()
@@ -142,11 +147,14 @@ pub async fn bind(
         hash_prefix(&req.contact_hash),
         req.contact_type
     ));
-    state.service.bind(Binding {
-        contact_hash: req.contact_hash,
-        contact_type: req.contact_type,
-        recoverywrap: req.recoverywrap,
-    });
+    state
+        .service
+        .bind(Binding {
+            contact_hash: req.contact_hash,
+            contact_type: req.contact_type,
+            recoverywrap: req.recoverywrap,
+        })
+        .map_err(ApiError)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
