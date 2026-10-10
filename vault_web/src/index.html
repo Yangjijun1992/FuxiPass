@@ -138,6 +138,7 @@
       </div>
 
       <div id="code-box" class="hidden">
+        <div id="code-display" class="alert ok hidden" style="font-size:15px"></div>
         <label>② 输入收到的验证码</label>
         <input id="recover-code" class="mono" placeholder="6 位数字" maxlength="6">
         <div class="row" style="margin-top:8px">
@@ -736,10 +737,22 @@ async function doRequestCode() {
     });
     recoveryRequestId = r.request_id;
     document.getElementById('code-box').classList.remove('hidden');
-    msg(r.dev_code
-      ? `验证码（本地联调直接显示）：${r.dev_code}`
-      : '验证码已发送，请查收邮件');
-  } catch (e) { msg('发送失败：' + e.message, 'err'); }
+    const box = document.getElementById('code-display');
+    if (r.dev_code) {
+      // 本地联调模式：不发邮件，直接把验证码显示出来
+      box.textContent = `本地联调模式（不会真的发邮件）—— 你的验证码是：${r.dev_code}`;
+      box.classList.remove('hidden');
+      msg('验证码已生成，见下方绿色框');
+    } else {
+      box.classList.add('hidden');
+      msg('验证码已发送，请查收邮件');
+    }
+  } catch (e) {
+    const hint = /未找到|未绑定/.test(e.message)
+      ? '（提示：该邮箱还没绑定。请先解锁 →「设置」→「找回服务（邮箱绑定）」里绑定它）'
+      : '';
+    msg('发送失败：' + e.message + hint, 'err');
+  }
 }
 
 async function doVerifyCode() {
