@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手动触发：用于按需构建各平台可执行文件（见 build-macos / build-linux）
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -70,3 +72,45 @@ jobs:
         run: |
           cc vault_ffi/tests/c_abi_smoke.c -Ltarget/debug -lvault_ffi -lpthread -ldl -lm -o /tmp/abi_smoke
           LD_LIBRARY_PATH=target/debug /tmp/abi_smoke /tmp/abis.db smoke-master-12345
+
+  build-macos:
+    name: 构建 macOS ARM64 可执行文件（手动触发）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 编译
+        run: cargo build --release --bin vault_web --bin vault_cli --bin recovery_service
+      - name: 打包产物
+        run: |
+          mkdir -p dist
+          cp target/release/vault_web target/release/vault_cli target/release/recovery_service dist/
+          tar -czf fuxipass-macos-arm64.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuxipass-macos-arm64
+          path: fuxipass-macos-arm64.tar.gz
+          retention-days: 30
+
+  build-linux:
+    name: 构建 Linux x86_64 可执行文件（手动触发）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 编译
+        run: cargo build --release --bin vault_web --bin vault_cli --bin recovery_service
+      - name: 打包产物
+        run: |
+          mkdir -p dist
+          cp target/release/vault_web target/release/vault_cli target/release/recovery_service dist/
+          tar -czf fuxipass-linux-x86_64.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuxipass-linux-x86_64
+          path: fuxipass-linux-x86_64.tar.gz
+          retention-days: 30
