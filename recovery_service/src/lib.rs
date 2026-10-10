@@ -263,6 +263,18 @@ impl RecoveryService {
     pub fn binding_count(&self) -> usize {
         self.lock().bindings.len()
     }
+
+    /// 运行统计 `(绑定数, 待验证挑战数, 有效令牌数)`。
+    ///
+    /// 只返回**计数**，不返回任何哈希/密文，避免通过该接口枚举联系人。
+    pub fn stats(&self) -> (usize, usize, usize) {
+        let inner = self.lock();
+        (
+            inner.bindings.len(),
+            inner.challenges.len(),
+            inner.tokens.len(),
+        )
+    }
 }
 
 /// 常量时间比较（等长比较；长度不同直接返回 false，不泄露内容信息）。

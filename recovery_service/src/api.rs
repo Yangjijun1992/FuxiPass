@@ -83,6 +83,16 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// 事件日志（**只记录非敏感元数据**：绝不打印验证码、完整哈希或套件内容）。
+fn log_event(event: &str) {
+    println!("[找回服务] {event}");
+}
+
+/// 哈希前缀（仅 8 个字符，用于人工核对「是不是同一个联系人」）。
+fn hash_prefix(hash: &str) -> &str {
+    hash.get(..hash.len().min(8)).unwrap_or(hash)
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -95,6 +105,30 @@ fn new_token() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// 健康检查与运行统计（**只返回计数**，便于运维确认服务在工作）。
+#[derive(Serialize)]
+pub struct HealthResp {
+    /// 是否正常。
+    pub ok: bool,
+    /// 已绑定的联系人数。
+    pub bindings: usize,
+    /// 待验证的挑战数。
+    pub pending_challenges: usize,
+    /// 有效令牌数。
+    pub active_tokens: usize,
+}
+
+/// `GET /v1/health`
+pub async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResp> {
+    let (bindings, pending_challenges, active_tokens) = state.service.stats();
+    Json(HealthResp {
+        ok: true,
+        bindings,
+        pending_challenges,
+        active_tokens,
+    })
+}
+
 /// `POST /v1/recovery/bind`
 pub async fn bind(
     State(state): State<Arc<AppState>>,
@@ -103,6 +137,11 @@ pub async fn bind(
     if req.contact_hash.is_empty() || req.recoverywrap.is_empty() {
         return Err(ApiError(RecoveryError::NotBound));
     }
+    log_event(&format!(
+        "收到绑定：contact_hash 前缀 {}（类型 {:?}）",
+        hash_prefix(&req.contact_hash),
+        req.contact_type
+    ));
     state.service.bind(Binding {
         contact_hash: req.contact_hash,
         contact_type: req.contact_type,
@@ -116,11 +155,19 @@ pub async fn challenge(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ChallengeReq>,
 ) -> Result<Json<ChallengeIssued>, ApiError> {
-    state
-        .service
-        .challenge(&req.contact_hash, now_ms())
-        .map(Json)
-        .map_err(ApiError)
+    let result = state.service.challenge(&req.contact_hash, now_ms());
+    match &result {
+        Ok(issued) => log_event(&format!(
+            "签发验证码：request_id={} contact_hash 前缀 {}",
+            issued.request_id,
+            hash_prefix(&req.contact_hash)
+        )),
+        Err(err) => log_event(&format!(
+            "签发失败：contact_hash 前缀 {} → {err}",
+            hash_prefix(&req.contact_hash)
+        )),
+    }
+    result.map(Json).map_err(ApiError)
 }
 
 /// `POST /v1/recovery/verify`
@@ -128,11 +175,17 @@ pub async fn verify(
     State(state): State<Arc<AppState>>,
     Json(req): Json<VerifyReq>,
 ) -> Result<Json<VerifyResult>, ApiError> {
-    state
+    let result = state
         .service
-        .verify(&req.request_id, &req.code, now_ms(), new_token())
-        .map(Json)
-        .map_err(ApiError)
+        .verify(&req.request_id, &req.code, now_ms(), new_token());
+    match &result {
+        Ok(_) => log_event(&format!(
+            "验证成功：request_id={}（已下发套件）",
+            req.request_id
+        )),
+        Err(err) => log_event(&format!("验证失败：request_id={} → {err}", req.request_id)),
+    }
+    result.map(Json).map_err(ApiError)
 }
 
 /// `POST /v1/recovery/wrap`
@@ -140,9 +193,11 @@ pub async fn redeem(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RedeemReq>,
 ) -> Result<Json<RedeemResp>, ApiError> {
-    state
-        .service
-        .redeem(&req.token, now_ms())
+    let result = state.service.redeem(&req.token, now_ms());
+    if result.is_ok() {
+        log_event("已按令牌下发套件（令牌已消费）");
+    }
+    result
         .map(|recoverywrap| Json(RedeemResp { recoverywrap }))
         .map_err(ApiError)
 }

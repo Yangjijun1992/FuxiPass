@@ -8,7 +8,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::Router;
 
 use recovery_service::{api, RecoveryService};
@@ -40,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/recovery/challenge", post(api::challenge))
         .route("/v1/recovery/verify", post(api::verify))
         .route("/v1/recovery/wrap", post(api::redeem))
+        .route("/v1/health", get(api::health))
         .with_state(state);
 
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
