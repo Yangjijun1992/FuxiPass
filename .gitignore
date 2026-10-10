@@ -44,3 +44,7 @@ fuxipass-backup*.json
 
 # 部署包（含二进制，不入库）
 deploy/
+
+# 从 CI 下载的构建产物（不入库）
+fuxipass-*.zip
+fuxipass-*.tar.gz

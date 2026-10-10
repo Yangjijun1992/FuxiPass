@@ -618,6 +618,7 @@ name = "recovery_service"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "rusqlite",
  "security_core",
  "serde",
  "serde_json",
