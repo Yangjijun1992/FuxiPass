@@ -21,7 +21,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("change-password") => commands::cmd_change_password(&args[1..]),
         Some("delete") => commands::cmd_delete(&args[1..]),
         Some("recover") => commands::cmd_recover(&args[1..]),
-        _ => {
+        Some(other) => {
+            // 未知命令：明确报错（含「是否想输入 import-backup」提示），避免静默显示帮助。
+            eprintln!("错误：未知命令 `{other}`");
+            if let Some(suggestion) = commands::suggest_command(other) {
+                eprintln!("提示：是否想输入 `{suggestion}`？");
+            }
+            eprintln!();
+            commands::print_help();
+            std::process::exit(2)
+        }
+        None => {
             commands::print_help();
             Ok(())
         }

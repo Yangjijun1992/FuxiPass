@@ -228,6 +228,52 @@ pub fn cmd_recover(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 已知命令清单（供拼写纠正使用）。
+const KNOWN_COMMANDS: &[&str] = &[
+    "import",
+    "list",
+    "export",
+    "import-backup",
+    "change-password",
+    "delete",
+    "recover",
+];
+
+/// 为拼错的命令给出最接近的建议（前缀或编辑距离）。
+pub fn suggest_command(input: &str) -> Option<&'static str> {
+    // 1) 前缀匹配优先："import-back" → "import-backup"
+    if let Some(hit) = KNOWN_COMMANDS
+        .iter()
+        .find(|c| c.starts_with(input) && *c != &input)
+    {
+        return Some(hit);
+    }
+    // 2) 编辑距离 ≤ 2 视为拼写错误
+    KNOWN_COMMANDS
+        .iter()
+        .map(|c| (*c, edit_distance(input, c)))
+        .filter(|(_, d)| *d <= 2)
+        .min_by_key(|(_, d)| *d)
+        .map(|(c, _)| c)
+}
+
+/// 计算 Levenshtein 编辑距离。
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
 /// 帮助信息。
 pub fn print_help() {
     println!("vault_cli —— 安全密码管家离线运维");
@@ -241,4 +287,33 @@ pub fn print_help() {
     println!("  recover         --db <库>                     [--recovery-key-file <文件>] [--new-password-file <文件>]");
     println!();
     println!("说明：所有口令建议用 --*-file 传入，避免终端回显与 shell 历史留痕。");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{edit_distance, suggest_command};
+
+    #[test]
+    fn suggests_prefix_match() {
+        assert_eq!(suggest_command("import-back"), Some("import-backup"));
+        assert_eq!(suggest_command("change"), Some("change-password"));
+    }
+
+    #[test]
+    fn suggests_on_typo() {
+        assert_eq!(suggest_command("lst"), Some("list"));
+        assert_eq!(suggest_command("exprot"), Some("export"));
+    }
+
+    #[test]
+    fn no_suggestion_for_unrelated_input() {
+        assert_eq!(suggest_command("zzzzzzzz"), None);
+    }
+
+    #[test]
+    fn edit_distance_basic() {
+        assert_eq!(edit_distance("list", "list"), 0);
+        assert_eq!(edit_distance("lst", "list"), 1);
+        assert_eq!(edit_distance("export", "exprot"), 2);
+    }
 }
