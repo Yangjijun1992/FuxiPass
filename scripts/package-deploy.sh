@@ -23,10 +23,10 @@ done
 
 echo "==> 3/4 写入部署说明"
 cat > "$PKG/部署步骤.md" <<'GUIDE'
-# FuxiPass 部署步骤（目标电脑执行）
+# FuxiPass 部署步骤
 
-> 适用：x86_64 Linux，glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+ / Rocky 9+）。
-> 若目标机 glibc 更旧，请改为「从源码构建」（见文末）。
+> **本包内的二进制仅适用于 x86_64 Linux（glibc ≥ 2.35）。**
+> **macOS（含 Apple Silicon）与 Windows 请在目标机上从源码编译** —— 见文末「其他平台」。
 
 ## 0. 前置检查
 
@@ -119,14 +119,40 @@ ssh -L 8787:127.0.0.1:8787 用户名@目标机地址 -N
 3. 恢复密钥、备份口令请离线保存。
 4. 用完 `Ctrl+C` 停止服务（另有空闲 5 分钟自动锁定兜底）。
 
-## 附：目标机 glibc 过旧时（从源码构建）
+## 其他平台（macOS / Windows / 旧版 Linux）：从源码编译
+
+**二进制不能跨操作系统**（Linux ELF ≠ macOS Mach-O）。请把**源码包**
+`fuxipass-source.tar.gz` 拷到目标机，在目标机上编译：
+
+### macOS（含 Apple Silicon / ARM64）
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # 安装 Rust
-git clone git@github.com:Yangjijun1992/FuxiPass.git && cd FuxiPass
-cargo build --release
-# 之后用 target/release/ 下的二进制，路径替换上面的 ./bin/
+# 1) 装编译工具（提供 clang —— SQLite 编译需要）
+xcode-select --install
+
+# 2) 装 Rust（会自动匹配本机架构，如 aarch64-apple-darwin）
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustc --version        # 应显示 aarch64-apple-darwin
+
+# 3) 解压源码并编译
+mkdir -p ~/fuxipass && tar -xzf fuxipass-source.tar.gz -C ~/fuxipass
+cd ~/fuxipass && cargo build --release      # 首次约 3-6 分钟
+
+# 4) 之后把本文档中所有 ./bin/xxx 换成 ./target/release/xxx，例如：
+./target/release/vault_cli import-backup --db ./data/fuxipass.vault.db --in <备份.json>
+./target/release/vault_web --db ./data/fuxipass.vault.db
 ```
+
+> macOS 提示：
+> - 本机编译的二进制没有 quarantine 属性，正常不会被 Gatekeeper 拦截。
+> - 若端口被占（macOS 的 5000/7000 常被 AirPlay 使用），换 `--port 8888`。
+> - 从其他设备访问仍走 SSH 隧道：`ssh -L 8787:127.0.0.1:8787 用户@mac地址 -N`
+
+### 旧版 glibc 的 Linux / 其他发行版
+
+同上：装 Rust（`rustup`）后 `cargo build --release` 即可。
+
 GUIDE
 
 echo "==> 4/4 打包"
