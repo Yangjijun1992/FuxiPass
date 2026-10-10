@@ -224,6 +224,7 @@
         <button onclick="doBindRecovery()">绑定</button>
         <button id="recovery-unbind-btn" class="ghost danger hidden" onclick="doUnbindRecovery()">解除绑定</button>
       </div>
+      <div id="recovery-result" class="hidden"></div>
       <p class="muted" style="font-size:12px;margin-top:6px">
         绑定后，忘记主密码时可通过邮箱验证 + <b>恢复密钥</b>找回。
         服务端只保存<b>不可逆哈希</b>与<b>加密套件</b>，无法解密你的数据。
@@ -792,6 +793,17 @@ async function doResetPassword() {
   } catch (e) { msg('重置失败：' + e.message, 'err'); }
 }
 
+/// 在指定容器内显示**常驻**反馈（不会被 5 秒清除），并同时在顶部提示。
+function feedback(containerId, text, kind) {
+  const el = document.getElementById(containerId);
+  if (el) {
+    el.className = 'alert ' + (kind === 'err' ? 'err' : kind === 'warn' ? 'warn' : 'ok');
+    el.textContent = text;
+    el.classList.remove('hidden');
+  }
+  msg(text, kind);
+}
+
 /* ---------- 找回服务绑定（T2.4） ---------- */
 async function loadRecoveryStatus() {
   const info = document.getElementById('recovery-info');
@@ -810,37 +822,51 @@ async function loadRecoveryStatus() {
       ? `✅ 已绑定 · 服务: ${s.service_url} · 记录前缀 ${s.contact_hash_prefix}…`
       : `未绑定 · 服务: ${s.service_url}`;
     if (unbind) unbind.classList.toggle('hidden', !s.bound);
+    // 状态刷新后清掉上一次的临时反馈，避免过期信息误导
+    const res = document.getElementById('recovery-result');
+    if (res && !/正在/.test(res.textContent || '')) res.classList.add('hidden');
   } catch (e) { /* 忽略 */ }
 }
 
 async function doBindRecovery() {
   const contact = (document.getElementById('recovery-contact').value || '').trim();
-  if (!contact) return msg('请先填写邮箱', 'err');
-  const mp = prompt('二次验证：请输入主密码');
-  if (mp === null) return;
+  if (!contact) return feedback('recovery-result', '请先填写邮箱地址', 'err');
+  const mp = prompt('二次验证：请输入主密码（确认是本人操作）');
+  if (mp === null) {
+    return feedback('recovery-result', '已取消绑定 —— 未做任何修改', 'warn');
+  }
+  feedback('recovery-result', '正在绑定…', 'ok');
   try {
     const r = await api('/api/recovery/bind', {
       method: 'POST',
       body: JSON.stringify({ contact, contact_type: 'email', master_password: mp })
     });
-    msg(`已绑定找回邮箱：${r.contact_masked}（服务端只存哈希与密文）`);
+    feedback('recovery-result', `✅ 绑定成功：${r.contact_masked}（服务端只保存哈希与密文）`, 'ok');
     document.getElementById('recovery-contact').value = '';
     await loadRecoveryStatus();
-  } catch (e) { msg('绑定失败：' + e.message, 'err'); }
+  } catch (e) {
+    feedback('recovery-result', '❌ 绑定失败：' + e.message, 'err');
+  }
 }
 
 async function doUnbindRecovery() {
-  if (!confirm('解除绑定后，将无法通过邮箱找回主密码（恢复密钥仍然有效）。继续？')) return;
+  if (!confirm('解除绑定后，将无法通过邮箱找回主密码（恢复密钥仍然有效）。继续？')) {
+    return feedback('recovery-result', '已取消解除绑定', 'warn');
+  }
   const mp = prompt('二次验证：请输入主密码');
-  if (mp === null) return;
+  if (mp === null) {
+    return feedback('recovery-result', '已取消解除绑定', 'warn');
+  }
   try {
     await api('/api/recovery/unbind', {
       method: 'POST',
       body: JSON.stringify({ master_password: mp })
     });
-    msg('已解除本地绑定记录（服务端记录仍保留，可重新绑定覆盖）');
+    feedback('recovery-result', '已解除绑定记录（可重新绑定覆盖）', 'ok');
     await loadRecoveryStatus();
-  } catch (e) { msg('解除失败：' + e.message, 'err'); }
+  } catch (e) {
+    feedback('recovery-result', '❌ 解除失败：' + e.message, 'err');
+  }
 }
 
 /* ---------- 隐私与合规（T4.4） ---------- */
