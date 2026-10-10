@@ -112,7 +112,9 @@ pub async fn request_code(
     let hash = contact_hash(&req.contact).map_err(ApiError::from_vault)?;
     let client = client_for(&url)?;
 
-    let payload = serde_json::json!({ "contact_hash": hash }).to_string();
+    // 同时提交明文与哈希：服务端据此校验并投递验证码（明文不落库）
+    let payload =
+        serde_json::json!({ "contact_hash": hash, "contact": req.contact.clone() }).to_string();
     let (code, body) = client
         .post_json("/v1/recovery/challenge", &payload)
         .map_err(|e| ApiError::Internal(format!("调用找回服务失败: {e}")))?;

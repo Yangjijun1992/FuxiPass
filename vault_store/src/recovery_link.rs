@@ -10,8 +10,6 @@
 //! - 联系方式**不发明文**给服务端，只发 Argon2id 哈希（抗枚举）；
 //! - 上传的套件全是密文（需恢复密钥才能解开）。
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use rusqlite::params;
 
 use crate::error::VaultError;
@@ -20,30 +18,12 @@ use crate::Vault;
 /// 找回套件格式版本。
 pub const KIT_VERSION: u32 = 1;
 
-/// 联系方式哈希的固定应用盐（非机密；用于保证同一联系方式得到同一哈希）。
-const CONTACT_SALT: &[u8] = b"fuxipass.contact.v1";
-
 /// 计算联系方式哈希（确定性 + 抗枚举）。
 ///
-/// 使用 Argon2id（19 MiB / t=2 / p=1）与固定盐：同一联系方式总是得到同一哈希
-/// （服务端据此查找），而高计算开销让「拿邮箱字典批量枚举」代价高昂。
+/// 实现已下沉到 `security_core::contact`，以便找回服务端也能用**同一算法**校验
+/// 「明文联系方式」与「绑定哈希」是否一致（防止服务被用作垃圾邮件转发器）。
 pub fn contact_hash(contact: &str) -> Result<String, VaultError> {
-    use security_core::bytes::Base64Bytes;
-    use security_core::kdf::{KdfAlgorithm, KdfParams};
-
-    let normalized = contact.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Err(VaultError::InvalidInput("联系方式不能为空".to_owned()));
-    }
-    let params = KdfParams {
-        algorithm: KdfAlgorithm::Argon2id,
-        salt: Base64Bytes(CONTACT_SALT.to_vec()),
-        m_cost_kib: 19 * 1024,
-        t_cost: 2,
-        p_cost: 1,
-    };
-    let key = params.derive_kek(normalized.as_bytes())?;
-    Ok(URL_SAFE_NO_PAD.encode(key.as_bytes()))
+    security_core::contact_hash(contact).map_err(VaultError::from)
 }
 
 /// 找回套件（上传给服务端的全部内容，均为密文）。

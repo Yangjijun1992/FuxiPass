@@ -16,6 +16,7 @@
 
 pub mod api;
 
+pub mod mailer;
 pub mod store;
 
 use std::collections::HashMap;
@@ -131,6 +132,8 @@ pub struct RecoveryService {
     ephemeral: Mutex<Ephemeral>,
     /// 是否回显验证码（仅开发/测试开启）。
     pub dev_echo_code: bool,
+    /// SMTP 配置；为 `None` 时不发信（仅开发模式回显验证码）。
+    pub smtp: Option<crate::mailer::SmtpConfig>,
 }
 
 #[derive(Default)]
@@ -150,7 +153,14 @@ impl RecoveryService {
             store: Arc::new(store::MemoryBindingStore::new()),
             ephemeral: Mutex::new(Ephemeral::default()),
             dev_echo_code,
+            smtp: None,
         }
+    }
+
+    /// 配置 SMTP 发信能力（链式调用）。
+    pub fn with_smtp(mut self, smtp: crate::mailer::SmtpConfig) -> Self {
+        self.smtp = Some(smtp);
+        self
     }
 
     /// **持久化实例**：绑定写入指定 SQLite 文件，重启不丢。
@@ -162,6 +172,7 @@ impl RecoveryService {
             store: Arc::new(store::SqliteBindingStore::open(db_path)?),
             ephemeral: Mutex::new(Ephemeral::default()),
             dev_echo_code,
+            smtp: None,
         })
     }
 
@@ -181,12 +192,22 @@ impl RecoveryService {
 
     /// 发起挑战：由服务端用 CSPRNG 生成一次性验证码与请求 ID。
     ///
-    /// 验证码**绝不由调用方指定**，且生产环境只经邮件/短信通道下发（不回显）。
+    /// 验证码**绝不由调用方指定**；若配置了 SMTP 则发往 `contact` 对应的邮箱，
+    /// 否则（开发模式）在响应中回显。
+    ///
+    /// **必须同时提供 `contact`（明文联系方式）**：服务端会校验其哈希与绑定哈希一致，
+    /// 否则任何人都能指定任意收件人，把本服务当作垃圾邮件转发器。
     pub fn challenge(
         &self,
         contact_hash: &str,
+        contact: &str,
         now_ms: u64,
     ) -> Result<ChallengeIssued, RecoveryError> {
+        // ① 明文与哈希必须对应（统一返回 `NotBound`，不泄露「哈希存在但明文不匹配」）
+        let computed = security_core::contact_hash(contact).map_err(|_| RecoveryError::NotBound)?;
+        if !constant_time_eq(&computed, contact_hash) {
+            return Err(RecoveryError::NotBound);
+        }
         if self.store.get(contact_hash)?.is_none() {
             // 不区分「未绑定」与「已绑定」，避免账号枚举；此处返回统一错误由调用方决定。
             return Err(RecoveryError::NotBound);
@@ -205,6 +226,12 @@ impl RecoveryService {
 
         let request_id = format!("req_{}", random_id());
         let code = generate_code();
+
+        // ③ 投递验证码：配置了 SMTP 才真发；失败则不登记挑战（用户可重试）
+        if let Some(smtp) = &self.smtp {
+            crate::mailer::send_verification_code(smtp, contact, &code, CODE_TTL_SECS)?;
+        }
+
         inner.challenges.insert(
             request_id.clone(),
             Challenge {

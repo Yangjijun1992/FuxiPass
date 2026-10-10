@@ -38,6 +38,8 @@ pub struct BindReq {
 pub struct ChallengeReq {
     /// 联系方式不可逆哈希。
     pub contact_hash: String,
+    /// 明文联系方式（仅用于投递验证码；服务端校验其哈希与绑定一致后即弃，不落库）。
+    pub contact: String,
 }
 
 /// 校验验证码请求。
@@ -163,7 +165,9 @@ pub async fn challenge(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ChallengeReq>,
 ) -> Result<Json<ChallengeIssued>, ApiError> {
-    let result = state.service.challenge(&req.contact_hash, now_ms());
+    let result = state
+        .service
+        .challenge(&req.contact_hash, &req.contact, now_ms());
     match &result {
         Ok(issued) => log_event(&format!(
             "签发验证码：request_id={} contact_hash 前缀 {}",

@@ -12,6 +12,7 @@
 
 pub mod bytes;
 pub mod cipher;
+pub mod contact;
 pub mod error;
 pub mod kdf;
 pub mod keys;
@@ -19,6 +20,7 @@ pub mod seal;
 pub mod vault;
 pub mod wrap;
 
+pub use contact::contact_hash;
 pub use error::SecurityError;
 pub use kdf::KdfParams;
 pub use keys::{AccountKey, Dek, Kek, RecoveryKey};
