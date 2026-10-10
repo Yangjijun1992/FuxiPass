@@ -283,6 +283,13 @@
 
 <div id="modal-root"></div>
 
+<div style="text-align:center;margin:24px 0 12px">
+  <span class="muted" style="font-size:11px">
+    界面版本 <span id="build-version" class="mono">…</span>
+    · <span id="build-endpoint" class="mono"></span>
+  </span>
+</div>
+
 <script>
 let TOKEN = null;
 
@@ -371,6 +378,10 @@ for (const ev of ['click', 'keydown', 'mousemove']) {
 
 async function refresh() {
   const s = await api('/api/status');
+  const bv = document.getElementById('build-version');
+  if (bv) bv.textContent = s.version || '?';
+  const be = document.getElementById('build-endpoint');
+  if (be) be.textContent = location.host + location.pathname;
   idleTimeoutSecs = s.idle_timeout_secs || 0;
   resetIdleTimer();
   show(s.initialized ? (s.unlocked ? 'main' : 'lock') : 'init');

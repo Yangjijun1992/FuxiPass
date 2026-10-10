@@ -29,6 +29,8 @@ pub struct StatusResp {
     pub failed_attempts: u32,
     /// 空闲自动锁定秒数（`0` 表示关闭）。
     pub idle_timeout_secs: u64,
+    /// 本服务的构建版本（git 短 SHA）——用于确认「你连的是哪个服务」。
+    pub version: String,
 }
 
 /// 初始化请求。
@@ -143,6 +145,7 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResp> {
         lock_remaining_secs,
         failed_attempts,
         idle_timeout_secs: state.idle_timeout_secs,
+        version: env!("GIT_SHA").to_owned(),
     })
 }
 
