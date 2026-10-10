@@ -7,6 +7,7 @@ mod api;
 mod api_compliance;
 mod api_data;
 mod api_recovery;
+mod api_reset;
 mod middleware;
 mod recovery_client;
 mod state;
@@ -38,6 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session: Mutex::new(None),
         idle_timeout_secs: config.idle_timeout_secs,
         recovery_service_url: config.recovery_service_url.clone(),
+        recovery: Mutex::new(None),
     });
 
     let protected = Router::new()
@@ -81,6 +83,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/initialize", post(api::initialize))
         .route("/api/unlock", post(api::unlock))
         .route("/api/recover", post(api::recover))
+        .route("/api/recover/request-code", post(api_reset::request_code))
+        .route("/api/recover/verify-code", post(api_reset::verify_code))
+        .route("/api/recover/reset", post(api_reset::reset))
         .merge(protected)
         .with_state(shared);
 

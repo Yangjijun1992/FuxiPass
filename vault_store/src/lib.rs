@@ -35,7 +35,7 @@ pub use models::{
     masked_preview, AccountDetail, AccountInput, AccountSummary, AuditEntry, FieldType, Importance,
     SecretFieldView,
 };
-pub use recovery_link::{contact_hash, RecoveryKit};
+pub use recovery_link::{contact_hash, recover_with_kit, RecoveryKit};
 pub use secure_store::{PlatformError, SecureStore, ACCOUNT_KEY_ID};
 pub use session::{Session, SessionError, SessionPolicy, UnlockMethod};
 pub use vault::{

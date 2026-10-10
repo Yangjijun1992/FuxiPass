@@ -51,8 +51,8 @@ pub fn contact_hash(contact: &str) -> Result<String, VaultError> {
 pub struct RecoveryKit {
     /// 格式版本。
     pub version: u32,
-    /// DEK 包裹（由恢复密钥加密）。
-    pub dekwrap: String,
+    /// DEK 的**恢复密钥包裹**（`meta.recoverywrap`）——这是找回时真正需要的东西。
+    pub recovery_wrap: String,
     /// FDEK 的恢复密钥包裹（若该库启用了 FDEK）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fdek_wrap_recovery: Option<String>,
@@ -61,14 +61,15 @@ pub struct RecoveryKit {
 impl Vault {
     /// 打包找回套件（**只含密文**；无需二次验证，因为服务端也解不开）。
     pub fn recovery_kit(&self) -> Result<RecoveryKit, VaultError> {
-        let row: (String, Option<String>) = self.conn.query_row(
-            "SELECT dekwrap, fdek_wrap_recovery FROM meta WHERE id = 1",
+        let row: (Option<String>, Option<String>) = self.conn.query_row(
+            "SELECT recoverywrap, fdek_wrap_recovery FROM meta WHERE id = 1",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
+        let recovery_wrap = row.0.ok_or(VaultError::RecoveryFailed)?;
         Ok(RecoveryKit {
             version: KIT_VERSION,
-            dekwrap: row.0,
+            recovery_wrap,
             fdek_wrap_recovery: row.1,
         })
     }
@@ -103,4 +104,86 @@ impl Vault {
             .ok();
         Ok(row.flatten())
     }
+}
+
+/// 用**外部找回套件**重置主密码（不依赖本地 `meta` 中的包裹）。
+///
+/// 用于「忘记主密码 → 邮箱验证取回套件 → 用恢复密钥重置」流程：
+/// 即使本地的恢复包裹缺失或损坏，只要拿到服务端保存的套件 + 恢复密钥，
+/// 就能解出 DEK 并用新主密码重新封装，**数据不受影响**。
+///
+/// # 错误
+/// - 恢复密钥错误 / 套件损坏 → [`VaultError::RecoveryFailed`]
+/// - 保险库未初始化 → [`VaultError::NotInitialized`]
+pub fn recover_with_kit(
+    path: &std::path::Path,
+    kit: &RecoveryKit,
+    recovery_key_display: &str,
+    new_master_password: &str,
+) -> Result<(), VaultError> {
+    use crate::fdek;
+    use crate::lockout;
+    use crate::schema;
+    use security_core::{RecoveryKey, Wrap};
+
+    if new_master_password.is_empty() {
+        return Err(VaultError::InvalidInput(
+            "new master password must not be empty".to_owned(),
+        ));
+    }
+    if kit.version != KIT_VERSION {
+        return Err(VaultError::InvalidInput(format!(
+            "不支持的找回套件版本: {}",
+            kit.version
+        )));
+    }
+
+    let conn = crate::vault::open_connection(path)?;
+    if !schema::is_initialized(&conn)? {
+        return Err(VaultError::NotInitialized);
+    }
+    let recovery =
+        RecoveryKey::from_display(recovery_key_display).map_err(|_| VaultError::RecoveryFailed)?;
+
+    // 1) 用恢复密钥从套件中解出 DEK
+    let dekwrap: Wrap =
+        serde_json::from_str(&kit.recovery_wrap).map_err(|_| VaultError::RecoveryFailed)?;
+    let dek_raw = security_core::wrap::unwrap_with_key(recovery.as_array(), &dekwrap)
+        .map_err(|_| VaultError::RecoveryFailed)?;
+    let dek = security_core::Dek::from_bytes(&dek_raw).map_err(|_| VaultError::RecoveryFailed)?;
+
+    // 2) 若套件含 FDEK 的恢复包裹，一并解出（保证高敏感字段仍可读）
+    let fdek_key = match kit.fdek_wrap_recovery.as_deref() {
+        Some(json) => {
+            let wrap: Wrap = serde_json::from_str(json).map_err(|_| VaultError::RecoveryFailed)?;
+            let raw = security_core::wrap::unwrap_with_key(recovery.as_array(), &wrap)
+                .map_err(|_| VaultError::RecoveryFailed)?;
+            Some(security_core::Dek::from_bytes(&raw).map_err(|_| VaultError::RecoveryFailed)?)
+        }
+        None => None,
+    };
+
+    // 3) 用新主密码重新封装 DEK（与 FDEK）
+    let new_kdf = security_core::KdfParams::with_random_salt();
+    let new_kek = new_kdf.derive_kek(new_master_password.as_bytes())?;
+    let new_dekwrap = security_core::wrap_dek(&new_kek, &dek, Some(new_kdf.clone()))?;
+    conn.execute(
+        "UPDATE meta SET kdf_params = ?1, dekwrap = ?2 WHERE id = 1",
+        rusqlite::params![
+            serde_json::to_string(&new_kdf)?,
+            serde_json::to_string(&new_dekwrap)?
+        ],
+    )?;
+    if let Some(key) = fdek_key {
+        // 同时刷新 FDEK 的主密码包裹与恢复包裹（沿用套件中的恢复包裹内容）
+        fdek::rewrap_fdek_for_password(&conn, key.as_array(), new_master_password)?;
+        if let Some(recovery_wrap_json) = kit.fdek_wrap_recovery.as_deref() {
+            conn.execute(
+                "UPDATE meta SET fdek_wrap_recovery = ?1 WHERE id = 1",
+                rusqlite::params![recovery_wrap_json],
+            )?;
+        }
+    }
+    lockout::reset(&conn)?;
+    Ok(())
 }

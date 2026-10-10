@@ -8,6 +8,19 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use vault_store::{Vault, VaultError};
 
+/// 待完成的邮箱找回会话。
+///
+/// 用户此时**处于锁定状态**（忘记了主密码），因此不复用解锁会话；
+/// 验证码校验通过后，服务端取回的套件暂存于此，再用一次性令牌 + 恢复密钥完成重置。
+pub struct PendingRecovery {
+    /// 一次性令牌（仅本次找回有效）。
+    pub token: String,
+    /// 服务端返回的找回套件（JSON；全为密文）。
+    pub kit_json: String,
+    /// 过期时间（epoch 毫秒）。
+    pub expires_at_ms: u64,
+}
+
 /// 已解锁会话：会话令牌 + 已解锁保险库 + 最近活跃时间。
 pub struct Unlocked {
     /// 会话令牌（随机，仅存内存）。
@@ -28,6 +41,8 @@ pub struct AppState {
     pub idle_timeout_secs: u64,
     /// 找回服务地址（未配置则关闭邮箱绑定入口）。
     pub recovery_service_url: Option<String>,
+    /// 待完成的邮箱找回会话（同时最多一个）。
+    pub recovery: Mutex<Option<PendingRecovery>>,
 }
 
 impl Unlocked {

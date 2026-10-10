@@ -111,15 +111,48 @@
            onkeydown="if(event.key==='Enter')doUnlock()">
     <div class="row" style="margin-top:14px">
       <button id="unlock-btn" class="primary" onclick="doUnlock()">解锁</button>
-      <button class="ghost" onclick="toggle('recover-box')">忘记主密码？用恢复密钥</button>
+      <button class="ghost" onclick="toggle('recover-box')">忘记主密码？</button>
     </div>
+
     <div id="recover-box" class="hidden">
-      <label>恢复密钥</label>
+      <div class="alert warn" style="margin-top:10px">
+        两种找回方式（都需要<b>恢复密钥</b>，它才是解开数据的钥匙）。
+      </div>
+
+      <!-- 方式一：本地恢复密钥 -->
+      <label style="margin-top:12px">方式一：直接用恢复密钥</label>
       <input id="recover-key" class="mono" placeholder="XXXX-XXXX-...">
       <label>新主密码</label>
       <input id="recover-pw" type="password" autocomplete="new-password">
       <div class="row" style="margin-top:10px">
-        <button onclick="doRecover()">重置主密码</button>
+        <button onclick="doRecover()">用恢复密钥重置</button>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
+
+      <!-- 方式二：邮箱验证码（需已绑定邮箱 + 已配置找回服务） -->
+      <label>方式二：邮箱验证码找回</label>
+      <input id="recover-contact" placeholder="绑定时填写的邮箱">
+      <div class="row" style="margin-top:8px">
+        <button onclick="doRequestCode()">① 发送验证码</button>
+      </div>
+
+      <div id="code-box" class="hidden">
+        <label>② 输入收到的验证码</label>
+        <input id="recover-code" class="mono" placeholder="6 位数字" maxlength="6">
+        <div class="row" style="margin-top:8px">
+          <button onclick="doVerifyCode()">② 验证</button>
+        </div>
+      </div>
+
+      <div id="reset-box" class="hidden">
+        <label>③ 恢复密钥</label>
+        <input id="reset-rk" class="mono" placeholder="XXXX-XXXX-...">
+        <label>④ 新主密码（≥ 8 位）</label>
+        <input id="reset-pw" type="password" autocomplete="new-password">
+        <div class="row" style="margin-top:8px">
+          <button class="primary" onclick="doResetPassword()">④ 重置主密码</button>
+        </div>
       </div>
     </div>
   </div>
@@ -688,6 +721,62 @@ async function exportAudit() {
     URL.revokeObjectURL(a.href);
     msg('审计日志已导出（CSV，不含任何明文）');
   } catch (e) { msg('导出失败：' + e.message, 'err'); }
+}
+
+/* ---------- 邮箱验证码找回（忘记主密码） ---------- */
+let recoveryRequestId = null;
+let recoveryToken = null;
+
+async function doRequestCode() {
+  const contact = (document.getElementById('recover-contact').value || '').trim();
+  if (!contact) return msg('请填写绑定时使用的邮箱', 'err');
+  try {
+    const r = await api('/api/recover/request-code', {
+      method: 'POST', body: JSON.stringify({ contact })
+    });
+    recoveryRequestId = r.request_id;
+    document.getElementById('code-box').classList.remove('hidden');
+    msg(r.dev_code
+      ? `验证码（本地联调直接显示）：${r.dev_code}`
+      : '验证码已发送，请查收邮件');
+  } catch (e) { msg('发送失败：' + e.message, 'err'); }
+}
+
+async function doVerifyCode() {
+  const code = (document.getElementById('recover-code').value || '').trim();
+  if (!code) return msg('请输入验证码', 'err');
+  try {
+    const r = await api('/api/recover/verify-code', {
+      method: 'POST',
+      body: JSON.stringify({ request_id: recoveryRequestId, code })
+    });
+    recoveryToken = r.recovery_token;
+    document.getElementById('reset-box').classList.remove('hidden');
+    msg('验证通过 ✅ 请填入恢复密钥并设置新主密码');
+  } catch (e) { msg('验证失败：' + e.message, 'err'); }
+}
+
+async function doResetPassword() {
+  const rk = (document.getElementById('reset-rk').value || '').trim();
+  const pw = document.getElementById('reset-pw').value;
+  if (!rk) return msg('请填入恢复密钥', 'err');
+  if (pw.length < 8) return msg('新主密码至少 8 位', 'err');
+  if (!confirm('将用恢复密钥 + 新主密码重写保险库的解锁凭据。\n（数据不会丢失，旧主密码立即失效）\n\n继续？')) return;
+  try {
+    await api('/api/recover/reset', {
+      method: 'POST',
+      body: JSON.stringify({ recovery_token: recoveryToken, recovery_key: rk, new_master_password: pw })
+    });
+    msg('主密码已重置，请用新主密码登录');
+    recoveryToken = null;
+    for (const id of ['recover-contact', 'recover-code', 'reset-rk', 'reset-pw']) {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    }
+    document.getElementById('code-box').classList.add('hidden');
+    document.getElementById('reset-box').classList.add('hidden');
+    await refresh();
+  } catch (e) { msg('重置失败：' + e.message, 'err'); }
 }
 
 /* ---------- 找回服务绑定（T2.4） ---------- */
