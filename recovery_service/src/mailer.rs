@@ -10,6 +10,13 @@
 //!
 //! 授权码**不进入命令行参数**（避免 `ps` 泄露）：写入 0600 临时配置文件，
 //! 用 `--config` 传入，发送后立即删除。
+//!
+//! # `--sasl-ir` 不可省略
+//!
+//! QQ 邮箱的 `AUTH PLAIN` 只接受**一行内带初始响应**的形式。curl 默认先发一个
+//! 空的 `AUTH PLAIN` 等挑战，QQ 会再回一个 `334`，curl 随即以 `(67) Login denied`
+//! 放弃认证 —— 凭据本身完全正确（同一凭据用 smtplib 可正常登录）。
+//! 加 `--sasl-ir` 后 curl 发送 `AUTH PLAIN <base64>` 单行形式，QQ 才回 `235`。
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -76,7 +83,7 @@ pub fn send_verification_code(
         .arg(&msg_path)
         .arg("--config")
         .arg(&conf_path)
-        .args(["--silent", "--show-error", "--max-time", "20"])
+        .args(["--silent", "--show-error", "--sasl-ir", "--max-time", "20"])
         .output();
 
     // 无论成败都立即删除临时文件（凭据不留盘）

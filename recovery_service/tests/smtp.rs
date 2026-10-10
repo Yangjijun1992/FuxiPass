@@ -58,19 +58,23 @@ fn serve_session(stream: TcpStream) -> String {
         }
         if awaiting_auth_payload {
             awaiting_auth_payload = false;
-            reply(&mut writer, "235 authenticated\r\n");
+            // 模拟 QQ：裸 AUTH PLAIN 即使随后收到正确凭据也拒绝（curl 缺 --sasl-ir 时会走到这里）
+            reply(&mut writer, "535 authentication failed\r\n");
             continue;
         }
         let cmd = line.trim_end().to_uppercase();
         if cmd.starts_with("EHLO") || cmd.starts_with("HELO") {
             reply(&mut writer, "250-fake\r\n250 AUTH PLAIN LOGIN\r\n");
-        } else if cmd.starts_with("AUTH PLAIN") || cmd.starts_with("AUTH LOGIN") {
+        } else if cmd.starts_with("AUTH PLAIN") {
             if cmd.split_whitespace().count() > 2 {
                 reply(&mut writer, "235 authenticated\r\n");
             } else {
                 awaiting_auth_payload = true;
                 reply(&mut writer, "334 \r\n");
             }
+        } else if cmd.starts_with("AUTH LOGIN") {
+            awaiting_auth_payload = true;
+            reply(&mut writer, "334 VXNlcm5hbWU6\r\n");
         } else if cmd.starts_with("MAIL FROM") || cmd.starts_with("RCPT TO") {
             reply(&mut writer, "250 ok\r\n");
         } else if cmd.starts_with("DATA") {
