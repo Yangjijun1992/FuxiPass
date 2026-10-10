@@ -41,3 +41,6 @@ credentials*.txt
 # 保险库与备份（即使已加密，也绝不入库）
 fuxipass-backup*.json
 *.vault.db.bak
+
+# 部署包（含二进制，不入库）
+deploy/
