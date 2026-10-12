@@ -1,0 +1,4 @@
+# 鸿蒙（aarch64-unknown-linux-ohos）交叉编译所需的链接器。
+# 完整配方见 docs/11-鸿蒙交叉编译PoC.md。
+[target.aarch64-unknown-linux-ohos]
+linker = "clang"
