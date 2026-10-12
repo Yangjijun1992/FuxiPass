@@ -33,9 +33,17 @@ pub struct RecoveryClient {
     host: String,
     port: u16,
     timeout: Duration,
+    token: Option<String>,
 }
 
 impl RecoveryClient {
+    /// 附加访问令牌（找回服务启用鉴权时必需）。
+    #[must_use]
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
+        self
+    }
+
     /// 由 `http://host:port` 构造。
     pub fn new(base_url: &str) -> Result<Self, RecoveryClientError> {
         let rest = base_url
@@ -58,6 +66,7 @@ impl RecoveryClient {
             host,
             port,
             timeout: Duration::from_secs(10),
+            token: None,
         })
     }
 
@@ -73,11 +82,16 @@ impl RecoveryClient {
             .set_write_timeout(Some(self.timeout))
             .map_err(|e| RecoveryClientError::Io(e.to_string()))?;
 
+        let auth = self
+            .token
+            .as_deref()
+            .map_or(String::new(), |t| format!("Authorization: Bearer {t}\r\n"));
+
         let request = format!(
             "POST {path} HTTP/1.1\r\n\
              Host: {addr}\r\n\
              Content-Type: application/json\r\n\
-             Content-Length: {len}\r\n\
+             {auth}Content-Length: {len}\r\n\
              Connection: close\r\n\r\n{body}",
             len = body.len()
         );

@@ -19,7 +19,7 @@
 //! 加 `--sasl-ir` 后 curl 发送 `AUTH PLAIN <base64>` 单行形式，QQ 才回 `235`。
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::RecoveryError;
 
@@ -48,26 +48,21 @@ pub fn send_verification_code(
 ) -> Result<(), RecoveryError> {
     let message = build_message(&config.from, recipient, code, ttl_secs);
 
-    // 临时消息文件
+    // 临时消息文件（含明文验证码；创建即 0600，不跟随符号链接）
     let msg_path = temp_path("msg");
     let mut f =
-        std::fs::File::create(&msg_path).map_err(|e| RecoveryError::Storage(e.to_string()))?;
+        create_private_file(&msg_path).map_err(|e| RecoveryError::Storage(e.to_string()))?;
     f.write_all(message.as_bytes())
         .map_err(|e| RecoveryError::Storage(e.to_string()))?;
     drop(f);
 
-    // 临时配置（含凭据；0600）
+    // 临时配置（含 SMTP 授权码）
     let conf_path = temp_path("conf");
     {
         let mut c =
-            std::fs::File::create(&conf_path).map_err(|e| RecoveryError::Storage(e.to_string()))?;
+            create_private_file(&conf_path).map_err(|e| RecoveryError::Storage(e.to_string()))?;
         writeln!(c, "user = \"{}:{}\"", config.user, config.password)
             .map_err(|e| RecoveryError::Storage(e.to_string()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&conf_path, std::fs::Permissions::from_mode(0o600));
-        }
     }
 
     let output = std::process::Command::new("curl")
@@ -154,12 +149,28 @@ fn smtp_url_with_ehlo(url: &str, from: &str) -> String {
     format!("{}/{domain}", url.trim_end_matches('/'))
 }
 
+/// 创建仅属主可读写的文件（`O_EXCL` + 创建即 0600）。
+///
+/// 供本模块与令牌文件写入复用：既不跟随已存在的符号链接，也无「先创建后 chmod」
+/// 之间按 umask 短暂可读的窗口。
+pub fn create_private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
+}
+
+/// 生成不可预测的临时文件路径（CSPRNG，96-bit 随机）。
 fn temp_path(kind: &str) -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let suffix = URL_SAFE_NO_PAD.encode(security_core::cipher::CryptoRng::bytes(12));
     let mut p = std::env::temp_dir();
-    p.push(format!("fuxipass_{kind}_{}_{nanos}", std::process::id()));
+    p.push(format!("fuxipass_{kind}_{suffix}"));
     p
 }
 
@@ -206,5 +217,47 @@ mod tests {
             smtp_url_with_ehlo("smtp://127.0.0.1:25", "not-an-email"),
             "smtp://127.0.0.1:25/localhost"
         );
+    }
+
+    #[test]
+    fn temp_path_is_unpredictable() {
+        let a = temp_path("msg");
+        let b = temp_path("msg");
+        assert_ne!(a, b, "临时文件名必须不可预测（防预置符号链接）");
+        let name = a.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("fuxipass_msg_"), "保留可识别前缀: {name}");
+        assert!(
+            !name.contains(&std::process::id().to_string()),
+            "文件名不应含 PID（可预测）: {name}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_path("perm");
+        let file = create_private_file(&path).expect("创建临时文件");
+        drop(file);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(mode, 0o600, "临时文件必须创建即 0600（实际 {mode:o}）");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_file_refuses_existing_path() {
+        let target = temp_path("target");
+        std::fs::write(&target, b"original").unwrap();
+        let link = temp_path("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let err = create_private_file(&link);
+        let after = std::fs::read(&target).unwrap();
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_file(&target);
+
+        assert!(err.is_err(), "已存在的路径必须因 O_EXCL 而拒绝");
+        assert_eq!(after, b"original", "不得经符号链接写入目标文件");
     }
 }

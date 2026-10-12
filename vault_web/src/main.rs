@@ -39,6 +39,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session: Mutex::new(None),
         idle_timeout_secs: config.idle_timeout_secs,
         recovery_service_url: config.recovery_service_url.clone(),
+        recovery_token: match &config.recovery_token_file {
+            Some(path) => Some(
+                std::fs::read_to_string(path)
+                    .map_err(|e| format!("读取找回服务令牌失败（{}）: {e}", path.display()))?
+                    .trim()
+                    .to_owned(),
+            ),
+            None => None,
+        },
         recovery: Mutex::new(None),
     });
 
@@ -87,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/recover/verify-code", post(api_reset::verify_code))
         .route("/api/recover/reset", post(api_reset::reset))
         .merge(protected)
+        .layer(axum_mw::from_fn(middleware::guard_local_origin))
         .with_state(shared);
 
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, config.port));
@@ -120,6 +130,7 @@ struct Config {
     idle_timeout_secs: u64,
     /// 找回服务地址（可选）。
     recovery_service_url: Option<String>,
+    recovery_token_file: Option<PathBuf>,
 }
 
 fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
@@ -129,6 +140,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
     // 默认 5 分钟：与 PRD「闲置即锁定」一致；浏览器无法可靠感知切后台，故以请求空闲为准。
     let mut idle_timeout_secs: u64 = 300;
     let mut recovery_service_url: Option<String> = None;
+    let mut recovery_token_file: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -144,6 +156,12 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
                 i += 1;
                 recovery_service_url =
                     Some(args.get(i).ok_or("--recovery-service 需要 URL")?.clone());
+            }
+            "--recovery-token-file" => {
+                i += 1;
+                recovery_token_file = Some(PathBuf::from(
+                    args.get(i).ok_or("--recovery-token-file 需要路径")?,
+                ));
             }
             "--idle-timeout" => {
                 i += 1;
@@ -170,6 +188,7 @@ fn parse_args(args: &[String]) -> Result<Config, Box<dyn std::error::Error>> {
         seed_demo,
         idle_timeout_secs,
         recovery_service_url,
+        recovery_token_file,
     })
 }
 

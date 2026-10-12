@@ -114,6 +114,7 @@ pub async fn bind(
 
     // 上传到找回服务（本地调用，阻塞成本可忽略）
     let client = RecoveryClient::new(&service_url)
+        .map(|c| c.with_token(state.recovery_token.clone()))
         .map_err(|e| ApiError::BadRequest(format!("找回服务地址无效: {e}")))?;
     let payload = serde_json::json!({
         "contact_hash": hash,

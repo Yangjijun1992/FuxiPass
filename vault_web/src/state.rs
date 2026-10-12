@@ -41,6 +41,8 @@ pub struct AppState {
     pub idle_timeout_secs: u64,
     /// 找回服务地址（未配置则关闭邮箱绑定入口）。
     pub recovery_service_url: Option<String>,
+    /// 找回服务访问令牌（服务启用鉴权时必需）。
+    pub recovery_token: Option<String>,
     /// 待完成的邮箱找回会话（同时最多一个）。
     pub recovery: Mutex<Option<PendingRecovery>>,
 }

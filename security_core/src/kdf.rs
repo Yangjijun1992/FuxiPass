@@ -20,6 +20,15 @@ pub const DEFAULT_M_COST_KIB: u32 = 19 * 1024;
 pub const DEFAULT_T_COST: u32 = 2;
 /// 默认并行度。
 pub const DEFAULT_P_COST: u32 = 1;
+
+/// 允许的最大内存开销（1 GiB，以 KiB 计）——防止不可信参数触发 OOM。
+pub const MAX_M_COST_KIB: u32 = 1 << 20;
+
+/// 允许的最大迭代次数。
+pub const MAX_T_COST: u32 = 16;
+
+/// 允许的最大并行度。
+pub const MAX_P_COST: u32 = 16;
 /// 派生 salt 长度（字节）。
 pub const SALT_LEN: usize = 16;
 
@@ -85,6 +94,14 @@ impl KdfParams {
             return Err(SecurityError::InvalidKdf(
                 "m_cost_kib>=8, t_cost>=1, p_cost>=1 required".to_owned(),
             ));
+        }
+        // 上界：参数可能来自不可信来源（数据库 meta / 导入的备份），
+        // 无上界时攻击者可构造 m_cost=u32::MAX 触发 OOM 或长时间 CPU 占用。
+        if self.m_cost_kib > MAX_M_COST_KIB || self.t_cost > MAX_T_COST || self.p_cost > MAX_P_COST
+        {
+            return Err(SecurityError::InvalidKdf(format!(
+                "parameters exceed safety limits (m_cost_kib<={MAX_M_COST_KIB}, t_cost<={MAX_T_COST}, p_cost<={MAX_P_COST})"
+            )));
         }
         Ok(())
     }

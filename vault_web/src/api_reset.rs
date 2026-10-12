@@ -87,8 +87,10 @@ fn service_url(state: &AppState) -> Result<String, ApiError> {
     })
 }
 
-fn client_for(url: &str) -> Result<RecoveryClient, ApiError> {
-    RecoveryClient::new(url).map_err(|e| ApiError::BadRequest(format!("找回服务地址无效: {e}")))
+fn client_for(url: &str, token: Option<&str>) -> Result<RecoveryClient, ApiError> {
+    RecoveryClient::new(url)
+        .map(|c| c.with_token(token.map(str::to_owned)))
+        .map_err(|e| ApiError::BadRequest(format!("找回服务地址无效: {e}")))
 }
 
 /// 从服务响应中解析 JSON；非 2xx 时把服务端错误转成可读信息。
@@ -110,7 +112,7 @@ pub async fn request_code(
 ) -> Result<Json<RequestCodeResp>, ApiError> {
     let url = service_url(&state)?;
     let hash = contact_hash(&req.contact).map_err(ApiError::from_vault)?;
-    let client = client_for(&url)?;
+    let client = client_for(&url, state.recovery_token.as_deref())?;
 
     // 同时提交明文与哈希：服务端据此校验并投递验证码（明文不落库）
     let payload =
@@ -133,7 +135,7 @@ pub async fn verify_code(
     Json(req): Json<VerifyCodeReq>,
 ) -> Result<Json<VerifyCodeResp>, ApiError> {
     let url = service_url(&state)?;
-    let client = client_for(&url)?;
+    let client = client_for(&url, state.recovery_token.as_deref())?;
 
     let payload = serde_json::json!({
         "request_id": req.request_id,
