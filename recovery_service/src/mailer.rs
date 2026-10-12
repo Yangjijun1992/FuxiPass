@@ -36,6 +36,23 @@ pub struct SmtpConfig {
     pub from: String,
 }
 
+/// 校验邮箱地址：非空、长度合理、恰有一个 `@`，且不含空白/CR/LF/尖括号。
+///
+/// CR/LF 若进入 `To:` 头会造成 **SMTP 头注入**（追加 Bcc 等）；尖括号可破坏
+/// 信封地址结构。该值来自绑定时填写的联系方式，属服务端可控性输入，必须校验。
+fn validate_address(addr: &str) -> Result<(), RecoveryError> {
+    let invalid = addr.is_empty()
+        || addr.len() > 254
+        || addr.matches('@').count() != 1
+        || addr
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '\r' | '\n' | '\0' | '<' | '>' | ','));
+    if invalid {
+        return Err(RecoveryError::Storage("邮箱地址不合法".to_owned()));
+    }
+    Ok(())
+}
+
 /// 发送验证码邮件。
 ///
 /// # Errors
@@ -46,6 +63,9 @@ pub fn send_verification_code(
     code: &str,
     ttl_secs: u64,
 ) -> Result<(), RecoveryError> {
+    validate_address(recipient)?;
+    validate_address(&config.from)?;
+
     let message = build_message(&config.from, recipient, code, ttl_secs);
 
     // 临时消息文件（含明文验证码；创建即 0600，不跟随符号链接）
@@ -217,6 +237,24 @@ mod tests {
             smtp_url_with_ehlo("smtp://127.0.0.1:25", "not-an-email"),
             "smtp://127.0.0.1:25/localhost"
         );
+    }
+
+    #[test]
+    fn rejects_malformed_addresses() {
+        assert!(validate_address("owner@example.com").is_ok());
+        assert!(
+            validate_address("a@b.com\r\nBcc: evil@x.com").is_err(),
+            "CRLF 头注入"
+        );
+        assert!(
+            validate_address("a@b.com\nBcc: evil@x.com").is_err(),
+            "换行头注入"
+        );
+        assert!(validate_address("no-at-sign").is_err());
+        assert!(validate_address("two@@at.com").is_err());
+        assert!(validate_address("a b@c.com").is_err());
+        assert!(validate_address("<a@b.com>").is_err());
+        assert!(validate_address("").is_err());
     }
 
     #[test]

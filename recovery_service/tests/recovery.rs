@@ -194,6 +194,29 @@ fn plaintext_contact_must_match_bound_hash() {
 }
 
 #[test]
+fn unbound_contact_gets_indistinguishable_response() {
+    // 防账号枚举：哈希合法但未绑定时，响应必须与已绑定形态一致（不返回错误、
+    // 不回显验证码），且同样消耗限流配额。
+    let svc = RecoveryService::new(true);
+    svc.bind(binding()).unwrap();
+
+    let unbound = security_core::contact_hash("nobody@example.com").unwrap();
+    let issued = svc
+        .challenge(&unbound, "nobody@example.com", NOW)
+        .expect("未绑定也必须返回与已绑定一致的响应");
+    assert!(!issued.request_id.is_empty());
+    assert_eq!(issued.ttl_sec, CODE_TTL_SECS);
+    assert!(issued.dev_code.is_none(), "未绑定不得回显验证码");
+
+    // 未绑定同样受限流约束（否则可无限探测）
+    let mut last = svc.challenge(&unbound, "nobody@example.com", NOW);
+    for i in 1..=MAX_CHALLENGES_PER_WINDOW {
+        last = svc.challenge(&unbound, "nobody@example.com", NOW + i as u64);
+    }
+    assert!(matches!(last, Err(RecoveryError::RateLimited)));
+}
+
+#[test]
 fn server_side_storage_has_no_plaintext_contact() {
     let svc = RecoveryService::new(false);
     svc.bind(binding()).unwrap();

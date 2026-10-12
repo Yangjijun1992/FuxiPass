@@ -110,6 +110,7 @@ pub async fn request_code(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RequestCodeReq>,
 ) -> Result<Json<RequestCodeResp>, ApiError> {
+    state.check_recovery_rate_limit()?;
     let url = service_url(&state)?;
     let hash = contact_hash(&req.contact).map_err(ApiError::from_vault)?;
     let client = client_for(&url, state.recovery_token.as_deref())?;

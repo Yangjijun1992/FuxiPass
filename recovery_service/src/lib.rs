@@ -208,31 +208,36 @@ impl RecoveryService {
         if !constant_time_eq(&computed, contact_hash) {
             return Err(RecoveryError::NotBound);
         }
-        if self.store.get(contact_hash)?.is_none() {
-            // 不区分「未绑定」与「已绑定」，避免账号枚举；此处返回统一错误由调用方决定。
-            return Err(RecoveryError::NotBound);
+
+        // ② 限流先于「是否已绑定」的判定：未绑定同样消耗配额，
+        //    否则攻击者可无限次探测某邮箱是否已绑定。
+        {
+            let mut inner = self.lock();
+            let window_start = now_ms.saturating_sub(CHALLENGE_WINDOW_SECS * 1000);
+            let log = inner
+                .challenge_log
+                .entry(contact_hash.to_owned())
+                .or_default();
+            log.retain(|t| *t >= window_start);
+            if log.len() >= MAX_CHALLENGES_PER_WINDOW {
+                return Err(RecoveryError::RateLimited);
+            }
+            log.push(now_ms);
         }
-        let mut inner = self.lock();
-        let window_start = now_ms.saturating_sub(CHALLENGE_WINDOW_SECS * 1000);
-        let log = inner
-            .challenge_log
-            .entry(contact_hash.to_owned())
-            .or_default();
-        log.retain(|t| *t >= window_start);
-        if log.len() >= MAX_CHALLENGES_PER_WINDOW {
-            return Err(RecoveryError::RateLimited);
-        }
-        log.push(now_ms);
 
         let request_id = format!("req_{}", random_id());
         let code = generate_code();
 
-        // ③ 投递验证码：配置了 SMTP 才真发；失败则不登记挑战（用户可重试）
-        if let Some(smtp) = &self.smtp {
-            crate::mailer::send_verification_code(smtp, contact, &code, CODE_TTL_SECS)?;
+        // ③ 仅已绑定的联系方式真发邮件；但**响应形态与挑战登记对两者完全一致**，
+        //    使攻击者无法用「响应差异」或「后续 verify 的报错差异」判断绑定状态。
+        let bound = self.store.get(contact_hash)?.is_some();
+        if bound {
+            if let Some(smtp) = &self.smtp {
+                crate::mailer::send_verification_code(smtp, contact, &code, CODE_TTL_SECS)?;
+            }
         }
 
-        inner.challenges.insert(
+        self.lock().challenges.insert(
             request_id.clone(),
             Challenge {
                 contact_hash: contact_hash.to_owned(),
@@ -241,10 +246,15 @@ impl RecoveryService {
                 attempts: 0,
             },
         );
+
         Ok(ChallengeIssued {
             request_id,
             ttl_sec: CODE_TTL_SECS,
-            dev_code: if self.dev_echo_code { Some(code) } else { None },
+            dev_code: if self.dev_echo_code && bound {
+                Some(code)
+            } else {
+                None
+            },
         })
     }
 
@@ -345,17 +355,24 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
 /// 生成 6 位数字验证码（CSPRNG，均匀分布）。
 fn generate_code() -> String {
     use security_core::cipher::CryptoRng;
-    let bytes = CryptoRng::bytes(4);
-    let n = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % 1_000_000;
-    format!("{n:06}")
+    // 拒绝采样：直接取模会让低位区间略偏（虽极小），此处丢弃超出整数倍的取值。
+    const RANGE: u32 = 1_000_000;
+    const LIMIT: u32 = (u32::MAX / RANGE) * RANGE;
+    loop {
+        let b = CryptoRng::bytes(4);
+        let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        if v < LIMIT {
+            return format!("{:06}", v % RANGE);
+        }
+    }
 }
 
-/// 生成随机 ID（复用 `getrandom` 语义的系统随机源）。
+/// 生成随机请求 ID（CSPRNG）。
+///
+/// 早期实现用系统时间纳秒，可预测；未绑定联系方式也会登记同形态挑战（防枚举），
+/// 若 ID 可预测，攻击者就能据此区分「真挑战」与「诱饵挑战」。
 fn random_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    // 说明：ID 仅用于索引，不承担机密性；验证码本身由调用方通过 CSPRNG 生成。
-    format!("{nanos:x}")
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    URL_SAFE_NO_PAD.encode(security_core::cipher::CryptoRng::bytes(16))
 }

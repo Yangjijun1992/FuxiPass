@@ -23,7 +23,7 @@ use crate::Vault;
 /// 备份载荷的格式标识。
 pub const BACKUP_FORMAT: &str = "fuxipass-backup";
 /// 备份口令最小长度。
-pub const MIN_BACKUP_PASSPHRASE_LEN: usize = 8;
+pub const MIN_BACKUP_PASSPHRASE_LEN: usize = 12;
 
 /// 单个账号的备份表示（含全部明文密码，整体再被加密）。
 #[derive(Debug, Clone, Serialize, Deserialize)]

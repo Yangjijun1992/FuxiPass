@@ -45,6 +45,20 @@ pub struct AppState {
     pub recovery_token: Option<String>,
     /// 待完成的邮箱找回会话（同时最多一个）。
     pub recovery: Mutex<Option<PendingRecovery>>,
+    /// 「请求验证码」的时间窗（Web 层限流，独立于找回服务的限流）。
+    pub recovery_requests: Mutex<Vec<u64>>,
+}
+
+/// 恒定时间比较，避免按字节提前返回造成的时序侧信道。
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 impl Unlocked {
@@ -169,6 +183,32 @@ impl AppState {
     /// 校验令牌并刷新活跃时间；空闲超时则**自动锁定**并返回 `SessionExpired`。
     ///
     /// 这是「闲置自动锁定」的执行点：任何已认证请求都会经过它。
+    /// 校验并记录一次「请求找回验证码」（Web 层限流）。
+    ///
+    /// 找回服务自身也按联系方式限流；此处再加一层本机 Web 侧频率限制，
+    /// 防止界面被反复点击或脚本滥用（并让失败信息可读）。
+    pub fn check_recovery_rate_limit(&self) -> Result<(), ApiError> {
+        const MAX_REQUESTS: usize = 3;
+        const WINDOW_MS: u64 = 10 * 60 * 1000;
+        let now = now_ms();
+        let mut log = self
+            .recovery_requests
+            .lock()
+            .map_err(|_| ApiError::Internal("recovery rate lock poisoned".to_owned()))?;
+        log.retain(|t| t.saturating_add(WINDOW_MS) > now);
+        if log.len() >= MAX_REQUESTS {
+            let oldest = log.first().copied().unwrap_or(now);
+            let remaining_secs = oldest
+                .saturating_add(WINDOW_MS)
+                .saturating_sub(now)
+                .div_euclid(1000);
+            return Err(ApiError::TooManyAttempts { remaining_secs });
+        }
+        log.push(now);
+        Ok(())
+    }
+
+    /// 校验 `X-Session-Token` 头对应的会话是否已解锁。
     pub fn check_and_touch(&self, token: &str) -> Result<(), ApiError> {
         let mut guard = self
             .session
@@ -179,7 +219,7 @@ impl AppState {
             let Some(unlocked) = guard.as_ref() else {
                 return Err(ApiError::Locked);
             };
-            if unlocked.token != token {
+            if !constant_time_eq(unlocked.token.as_bytes(), token.as_bytes()) {
                 return Err(ApiError::Unauthorized);
             }
             is_idle_expired(unlocked.last_activity_ms, now, self.idle_timeout_secs)

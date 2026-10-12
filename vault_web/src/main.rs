@@ -16,6 +16,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use axum::extract::DefaultBodyLimit;
 use axum::response::Html;
 use axum::routing::{get, post};
 use axum::{middleware as axum_mw, Router};
@@ -49,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None => None,
         },
         recovery: Mutex::new(None),
+        recovery_requests: Mutex::new(Vec::new()),
     });
 
     let protected = Router::new()
@@ -97,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/recover/reset", post(api_reset::reset))
         .merge(protected)
         .layer(axum_mw::from_fn(middleware::guard_local_origin))
+        .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .with_state(shared);
 
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, config.port));

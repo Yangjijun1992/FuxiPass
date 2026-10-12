@@ -14,6 +14,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use axum::Router;
 
@@ -144,6 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/recovery/verify", post(api::verify))
         .route("/v1/recovery/wrap", post(api::redeem))
         .route("/v1/health", get(api::health))
+        .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             api::guard,
