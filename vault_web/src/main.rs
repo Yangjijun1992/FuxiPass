@@ -191,6 +191,10 @@ fn seed_demo(path: &Path, master: &str) -> Result<(), Box<dyn std::error::Error>
         println!("恢复密钥（请离线妥善保存）: {}", init.recovery_key_display);
     }
     let vault = vault_store::unlock(path, master)?;
+    // 演示账号含高敏感字段（各类密码），写入需 FDEK，故必须先完成二次验证
+    if vault.has_fdek() && !vault.unlock_second_factor(master)? {
+        return Err("演示数据初始化失败：主密码校验未通过".into());
+    }
     if vault.list_accounts()?.is_empty() {
         for input in demo_accounts() {
             let _ = vault.create_account(&input)?;

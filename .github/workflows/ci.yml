@@ -40,6 +40,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+      - name: 冒烟测试（--seed-demo 应能启动并响应）
+        run: |
+          cargo build --bin vault_web
+          ./target/debug/vault_web --db /tmp/smoke.db --port 8790 --seed-demo "ci-smoke-123" &
+          APP_PID=$!
+          ok=0
+          for _ in $(seq 1 30); do
+            sleep 1
+            if curl -fsS http://127.0.0.1:8790/api/status | grep -q '"initialized":true'; then
+              ok=1
+              break
+            fi
+            kill -0 "$APP_PID" 2>/dev/null || break
+          done
+          kill "$APP_PID" 2>/dev/null || true
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::冒烟测试失败：--seed-demo 未能启动服务（详见上方输出）"
+            exit 1
+          fi
+          echo "冒烟测试通过：演示库已写入且服务可响应"
 
   miri:
     name: Miri（FFI 边界 UB 检查）
