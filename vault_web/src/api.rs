@@ -301,6 +301,48 @@ pub async fn delete_account(
     Ok(Json(()))
 }
 
+/// `GET /api/trash`（需解锁）—— 列出回收站中的账号
+pub async fn list_trash(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AccountSummary>>, ApiError> {
+    let token = AppState::token_from(&headers)?;
+    let items = state.with_vault(&token, |v| v.list_trash())?;
+    Ok(Json(items))
+}
+
+/// `POST /api/trash/:id/restore`（需解锁）—— 从回收站恢复账号
+pub async fn restore_account(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<()>, ApiError> {
+    let token = AppState::token_from(&headers)?;
+    state.with_vault(&token, |v| v.restore_account(&id))?;
+    Ok(Json(()))
+}
+
+/// `DELETE /api/trash/:id`（需解锁）—— 永久删除单条（不可恢复）
+pub async fn purge_account(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<()>, ApiError> {
+    let token = AppState::token_from(&headers)?;
+    state.with_vault(&token, |v| v.purge_account(&id))?;
+    Ok(Json(()))
+}
+
+/// `POST /api/trash/empty`（需解锁）—— 清空回收站，返回已删除条数
+pub async fn empty_trash(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let token = AppState::token_from(&headers)?;
+    let removed = state.with_vault(&token, |v| v.empty_trash())?;
+    Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
 /// `POST /api/reveal`（二次验证：需再次提供主密码）
 pub async fn reveal(
     State(state): State<Arc<AppState>>,

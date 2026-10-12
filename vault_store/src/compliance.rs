@@ -28,9 +28,11 @@ pub struct DataSummary {
 impl Vault {
     /// 数据概览。
     pub fn data_summary(&self) -> Result<DataSummary, VaultError> {
-        let accounts: i64 = self
-            .conn
-            .query_row("SELECT count(*) FROM accounts", [], |r| r.get(0))?;
+        let accounts: i64 = self.conn.query_row(
+            "SELECT count(*) FROM accounts WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
         let secret_fields: i64 =
             self.conn
                 .query_row("SELECT count(*) FROM secret_fields", [], |r| r.get(0))?;

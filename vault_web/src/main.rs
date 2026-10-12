@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::extract::DefaultBodyLimit;
 use axum::response::Html;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{middleware as axum_mw, Router};
 use vault_store::{AccountInput, Importance};
 
@@ -74,6 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .put(api::update_account)
                 .delete(api::delete_account),
         )
+        .route("/api/trash", get(api::list_trash))
+        .route("/api/trash/:id/restore", post(api::restore_account))
+        .route("/api/trash/:id", delete(api::purge_account))
+        .route("/api/trash/empty", post(api::empty_trash))
         .route("/api/reveal", post(api::reveal))
         .route("/api/audit", get(api_compliance::audit))
         .route("/api/audit/export", get(api_compliance::audit_export))

@@ -164,8 +164,10 @@ pub struct AccountSummary {
     pub importance: Importance,
     /// 该卡片包含的高敏感字段类型。
     pub field_types: Vec<FieldType>,
-    /// 更新时间。
+    /// 最后更新时间。
     pub updated_at: String,
+    /// 软删除时间；`None` = 正常，`Some` = 在回收站。
+    pub deleted_at: Option<String>,
 }
 
 /// 高敏感字段的脱敏视图（不含明文）。

@@ -147,17 +147,49 @@ fn update_account_replaces_values() {
 }
 
 #[test]
-fn delete_account_cascades_secret_fields() {
+fn delete_moves_to_trash_then_restore_or_purge() {
     let (_tv, vault, _rk) = bootstrapped();
     let id = vault.create_account(&sample_input()).unwrap();
+
+    // 软删除：进入回收站，active 列表/单查都看不到
     vault.delete_account(&id).unwrap();
     assert!(vault.list_accounts().unwrap().is_empty());
     assert!(matches!(
         vault.get_account(&id),
         Err(VaultError::AccountNotFound(_))
     ));
+
+    // 回收站可见，且已软删
+    let trash = vault.list_trash().unwrap();
+    assert_eq!(trash.len(), 1);
+    assert!(trash[0].deleted_at.is_some());
+
+    // 可恢复
+    vault.restore_account(&id).unwrap();
+    assert_eq!(vault.list_accounts().unwrap().len(), 1);
+    assert!(vault.list_trash().unwrap().is_empty());
+
+    // 再次软删 + 永久清除 → 级联删除高敏感字段（回收站清空、字段消失）
+    vault.delete_account(&id).unwrap();
+    vault.purge_account(&id).unwrap();
+    assert!(vault.list_trash().unwrap().is_empty());
     assert!(matches!(
         vault.reveal_secret(&id, FieldType::LoginPassword),
         Err(VaultError::SecretNotFound(_))
     ));
+}
+
+#[test]
+fn empty_trash_removes_all_deleted() {
+    let (_tv, vault, _rk) = bootstrapped();
+    let a = vault.create_account(&sample_input()).unwrap();
+    let b = vault.create_account(&sample_input()).unwrap();
+    vault.delete_account(&a).unwrap();
+    vault.delete_account(&b).unwrap();
+    assert_eq!(vault.list_trash().unwrap().len(), 2);
+
+    let removed = vault.empty_trash().unwrap();
+    assert_eq!(removed, 2);
+    assert!(vault.list_trash().unwrap().is_empty());
+    assert!(vault.list_accounts().unwrap().is_empty());
 }

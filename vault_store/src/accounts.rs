@@ -86,16 +86,53 @@ impl Vault {
         Ok(())
     }
 
-    /// 删除账号卡片（级联删除其高敏感字段）。
+    /// 删除账号卡片——**软删除**：写入 `deleted_at` 移入回收站（可恢复）。
+    ///
+    /// 刻意不物理删除、不级联删除高敏感字段，避免误删后无法找回。
     pub fn delete_account(&self, id: &str) -> Result<(), VaultError> {
+        let affected = self.conn.execute(
+            "UPDATE accounts SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+            params![now_millis(), id],
+        )?;
+        if affected == 0 {
+            return Err(VaultError::AccountNotFound(id.to_owned()));
+        }
+        self.record_audit("delete_account", None, Some(id))?;
+        Ok(())
+    }
+
+    /// 从回收站恢复账号。
+    pub fn restore_account(&self, id: &str) -> Result<(), VaultError> {
+        let affected = self.conn.execute(
+            "UPDATE accounts SET deleted_at = NULL WHERE id = ?1 AND deleted_at IS NOT NULL",
+            params![id],
+        )?;
+        if affected == 0 {
+            return Err(VaultError::AccountNotFound(id.to_owned()));
+        }
+        self.record_audit("restore_account", None, Some(id))?;
+        Ok(())
+    }
+
+    /// 永久删除单条（不可恢复）：物理删除账号并级联其高敏感字段。
+    pub fn purge_account(&self, id: &str) -> Result<(), VaultError> {
         let affected = self
             .conn
             .execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
         if affected == 0 {
             return Err(VaultError::AccountNotFound(id.to_owned()));
         }
-        self.record_audit("delete_account", None, Some(id))?;
+        self.record_audit("purge_account", None, Some(id))?;
         Ok(())
+    }
+
+    /// 清空回收站：永久删除所有已软删除的账号，返回删除条数。
+    pub fn empty_trash(&self) -> Result<usize, VaultError> {
+        let affected = self
+            .conn
+            .execute("DELETE FROM accounts WHERE deleted_at IS NOT NULL", [])?;
+        self.record_audit("empty_trash", None, None)?;
+        Ok(affected)
     }
 
     fn replace_secrets(

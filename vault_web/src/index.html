@@ -168,6 +168,7 @@
         <button onclick="openImport()">导入文本</button>
         <button onclick="openSettings()">设置</button>
         <button onclick="toggleAudit()">审计</button>
+        <button onclick="openTrash()">回收站</button>
         <button class="ghost" onclick="doLock()">锁定</button>
       </div>
     </div>
@@ -500,6 +501,93 @@ function renderList(items) {
 
     list.appendChild(c);
   }
+}
+
+async function openTrash() {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = '';
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.onclick = (ev) => { if (ev.target === bg) root.innerHTML = ''; };
+  const m = document.createElement('div');
+  m.className = 'modal';
+
+  const h = document.createElement('h3');
+  h.style.marginTop = '0';
+  h.textContent = '回收站';
+  m.appendChild(h);
+  const hint = document.createElement('p');
+  hint.className = 'muted';
+  hint.style.fontSize = '12px';
+  hint.textContent = '已删除的账号在此保留，可恢复或永久删除。';
+  m.appendChild(hint);
+
+  const body = document.createElement('div');
+  body.id = 'trash-body';
+  body.style.maxHeight = '60vh';
+  body.style.overflowY = 'auto';
+  m.appendChild(body);
+
+  const danger = Object.assign(document.createElement('div'), { style: 'margin-top:16px' });
+  const empty = document.createElement('button');
+  empty.className = 'danger';
+  empty.textContent = '清空回收站';
+  empty.onclick = emptyTrashAll;
+  danger.appendChild(empty);
+  m.appendChild(danger);
+
+  bg.appendChild(m);
+  root.appendChild(bg);
+  await loadTrash(body);
+}
+
+async function loadTrash(body) {
+  body.innerHTML = '';
+  let items = [];
+  try { items = await api('/api/trash'); } catch (e) { body.textContent = '加载失败：' + e.message; return; }
+  if (!items.length) {
+    const p = Object.assign(document.createElement('p'), { className: 'muted', textContent: '回收站是空的。' });
+    body.appendChild(p);
+    return;
+  }
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'card';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = it.app_name + (it.deleted_at ? '  ·删除于 ' + it.deleted_at : '');
+    row.appendChild(name);
+    const meta = Object.assign(document.createElement('div'), { className: 'muted', textContent: it.username || '—' });
+    meta.style.fontSize = '12px';
+    row.appendChild(meta);
+    body.appendChild(row);
+
+    const rowBtns = Object.assign(document.createElement('div'), { className: 'row', style: 'margin:6px 0 14px' });
+    const restore = document.createElement('button');
+    restore.textContent = '恢复';
+    restore.onclick = async () => {
+      try { await api('/api/trash/' + encodeURIComponent(it.id) + '/restore', { method: 'POST' }); msg('已恢复「' + it.app_name + '」','ok'); loadTrash(body); }
+      catch (e) { msg('恢复失败：' + e.message, 'err'); }
+    };
+    const purge = document.createElement('button');
+    purge.className = 'danger';
+    purge.textContent = '永久删除';
+    purge.onclick = async () => {
+      if (!confirm('永久删除「' + it.app_name + '」？不可恢复！')) return;
+      try { await api('/api/trash/' + encodeURIComponent(it.id), { method: 'DELETE' }); loadTrash(body); }
+      catch (e) { msg('删除失败：' + e.message, 'err'); }
+    };
+    rowBtns.appendChild(restore);
+    rowBtns.appendChild(purge);
+    body.appendChild(rowBtns);
+  }
+}
+
+async function emptyTrashAll() {
+  if (!confirm('确认清空回收站？其中所有账号将被永久删除，不可恢复！')) return;
+  try { const r = await api('/api/trash/empty', { method: 'POST' }); msg('已清空回收站（' + r.removed + ' 条）','ok'); }
+  catch (e) { msg('清空失败：' + e.message, 'err'); }
+  openTrash();
 }
 
 async function openDetail(id) {

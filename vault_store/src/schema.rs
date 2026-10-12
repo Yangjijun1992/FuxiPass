@@ -14,7 +14,7 @@ use rusqlite::Connection;
 use crate::VaultError;
 
 /// 当前 schema 版本，便于后续迁移。
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_SQL: &str = r"
 PRAGMA foreign_keys = ON;
@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     notes_enc     BLOB,
     importance    TEXT    NOT NULL,
     created_at    TEXT    NOT NULL,
-    updated_at    TEXT    NOT NULL
+    updated_at    TEXT    NOT NULL,
+    deleted_at    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS secret_fields (
@@ -113,6 +114,11 @@ pub fn migrate(conn: &Connection) -> Result<(), VaultError> {
              ALTER TABLE meta ADD COLUMN fdek_wrap_recovery TEXT;",
         )?;
         conn.execute("UPDATE meta SET schema_version = 3 WHERE id = 1", [])?;
+    }
+    if version < 5 {
+        // 软删除（回收站）：`deleted_at` 非空 = 已删除待恢复
+        conn.execute_batch("ALTER TABLE accounts ADD COLUMN deleted_at TEXT;")?;
+        conn.execute("UPDATE meta SET schema_version = 5 WHERE id = 1", [])?;
     }
     Ok(())
 }

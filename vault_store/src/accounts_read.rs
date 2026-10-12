@@ -22,7 +22,7 @@ impl Vault {
             .conn
             .query_row(
                 "SELECT app_name_enc, url_enc, username_enc, notes_enc, importance, updated_at
-                 FROM accounts WHERE id = ?1",
+                 FROM accounts WHERE id = ?1 AND deleted_at IS NULL",
                 params![id],
                 |r| {
                     Ok((
@@ -52,6 +52,7 @@ impl Vault {
                 importance: Importance::parse(&row.4),
                 field_types: secrets.iter().map(|s| s.field_type).collect(),
                 updated_at: row.5,
+                deleted_at: None,
             },
             notes,
             secrets,
@@ -144,12 +145,13 @@ impl Vault {
             .collect())
     }
 
-    fn all_summaries(&self) -> Result<Vec<AccountSummary>, VaultError> {
+    fn summaries_where(&self, cond: &str) -> Result<Vec<AccountSummary>, VaultError> {
         let key = self.key();
-        let mut stmt = self.conn.prepare(
-            "SELECT id, app_name_enc, url_enc, username_enc, importance, updated_at
-             FROM accounts ORDER BY updated_at DESC, id",
-        )?;
+        let sql = format!(
+            "SELECT id, app_name_enc, url_enc, username_enc, importance, updated_at, deleted_at
+             FROM accounts WHERE {cond} ORDER BY updated_at DESC, id"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
@@ -158,11 +160,12 @@ impl Vault {
                 r.get::<_, Option<Vec<u8>>>(3)?,
                 r.get::<_, String>(4)?,
                 r.get::<_, String>(5)?,
+                r.get::<_, Option<String>>(6)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, app_enc, url_enc, user_enc, importance, updated_at) = row?;
+            let (id, app_enc, url_enc, user_enc, importance, updated_at, deleted_at) = row?;
             out.push(AccountSummary {
                 app_name: decrypt_string(key, &app_enc)?,
                 url: seal::open_opt(key, url_enc.as_deref())?,
@@ -170,9 +173,20 @@ impl Vault {
                 importance: Importance::parse(&importance),
                 field_types: self.secret_types(&id)?,
                 updated_at,
+                deleted_at,
                 id,
             });
         }
         Ok(out)
+    }
+
+    /// 全部**未删除**账号摘要。
+    fn all_summaries(&self) -> Result<Vec<AccountSummary>, VaultError> {
+        self.summaries_where("deleted_at IS NULL")
+    }
+
+    /// 列出回收站中的账号（已软删除，待恢复或永久清除）。
+    pub fn list_trash(&self) -> Result<Vec<AccountSummary>, VaultError> {
+        self.summaries_where("deleted_at IS NOT NULL")
     }
 }
