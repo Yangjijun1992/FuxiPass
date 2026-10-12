@@ -169,6 +169,7 @@
         <button onclick="openSettings()">设置</button>
         <button onclick="toggleAudit()">审计</button>
         <button onclick="openTrash()">回收站</button>
+        <button onclick="doBatchDelete()" id="batch-delete-btn" disabled>批量删除</button>
         <button class="ghost" onclick="doLock()">锁定</button>
       </div>
     </div>
@@ -469,6 +470,8 @@ async function doSearch() {
 function renderList(items) {
   const list = document.getElementById('list');
   list.innerHTML = '';
+  let selected = window.__selectedIds__ = new Set();
+  updateBatchButton();
   if (!items.length) {
     const d = document.createElement('div');
     d.className = 'panel muted';
@@ -479,7 +482,18 @@ function renderList(items) {
   for (const it of items) {
     const c = document.createElement('div');
     c.className = 'card';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.style.marginRight = '10px';
+    cb.checked = selected.has(it.id);
+    cb.onclick = (ev) => {
+      ev.stopPropagation();
+      if (cb.checked) selected.add(it.id); else selected.delete(it.id);
+      updateBatchButton();
+    };
     c.onclick = () => openDetail(it.id);
+    c.prepend(cb);
 
     const name = document.createElement('div');
     name.className = 'name';
@@ -588,6 +602,25 @@ async function emptyTrashAll() {
   try { const r = await api('/api/trash/empty', { method: 'POST' }); msg('已清空回收站（' + r.removed + ' 条）','ok'); }
   catch (e) { msg('清空失败：' + e.message, 'err'); }
   openTrash();
+}
+
+function updateBatchButton() {
+  const btn = document.getElementById('batch-delete-btn');
+  if (btn) btn.disabled = !(window.__selectedIds__ && window.__selectedIds__.size > 0);
+}
+
+async function doBatchDelete() {
+  const sel = window.__selectedIds__;
+  if (!sel || sel.size === 0) return;
+  const n = sel.size;
+  if (!confirm('确认删除所选 ' + n + ' 个账号？（将移入回收站，可恢复）')) return;
+  try {
+    for (const id of sel) {
+      await api('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
+    }
+    msg('已删除 ' + n + ' 个账号（已入回收站）','ok');
+  } catch (e) { msg('批量删除失败：' + e.message, 'err'); }
+  await doSearch();
 }
 
 async function openDetail(id) {
