@@ -163,6 +163,8 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | 测试用例、必过红线 | [`docs/03-验收测试用例清单.md`](docs/03-验收测试用例清单.md) |
 | 数据库表结构、找回接口 | [`docs/04-数据库与远程接口.md`](docs/04-数据库与远程接口.md) |
 | 关键决策与权衡记录 | [`docs/06-架构决策记录ADR.md`](docs/06-架构决策记录ADR.md) |
+| **在 macOS 上开发与维护** | [`docs/10-macOS-开发与维护.md`](docs/10-macOS-开发与维护.md) |
+| 日常使用（绑定/找回/备份） | [`docs/09-使用指南.md`](docs/09-使用指南.md) |
 
 ---
 
