@@ -31,7 +31,7 @@ const CONTACT_P_COST: u32 = 1;
 pub fn contact_hash(contact: &str) -> Result<String, SecurityError> {
     let normalized = contact.trim().to_lowercase();
     if normalized.is_empty() {
-        return Err(SecurityError::EmptyMasterPassword);
+        return Err(SecurityError::EmptyInput);
     }
     let params = KdfParams {
         algorithm: KdfAlgorithm::Argon2id,

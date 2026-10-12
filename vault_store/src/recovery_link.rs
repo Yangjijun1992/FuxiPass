@@ -23,7 +23,12 @@ pub const KIT_VERSION: u32 = 1;
 /// 实现已下沉到 `security_core::contact`，以便找回服务端也能用**同一算法**校验
 /// 「明文联系方式」与「绑定哈希」是否一致（防止服务被用作垃圾邮件转发器）。
 pub fn contact_hash(contact: &str) -> Result<String, VaultError> {
-    security_core::contact_hash(contact).map_err(VaultError::from)
+    security_core::contact_hash(contact).map_err(|err| match err {
+        security_core::SecurityError::EmptyInput => {
+            VaultError::InvalidInput("联系方式不能为空".to_owned())
+        }
+        other => VaultError::from(other),
+    })
 }
 
 /// 找回套件（上传给服务端的全部内容，均为密文）。

@@ -16,6 +16,10 @@ pub enum SecurityError {
     #[error("master password must not be empty")]
     EmptyMasterPassword,
 
+    /// 输入为空（非密码类输入，如待哈希的联系方式）。
+    #[error("input must not be empty")]
+    EmptyInput,
+
     /// 密钥派生失败（底层 argon2 错误）。
     #[error("Argon2id key derivation failed")]
     KeyDerivation,
