@@ -17,17 +17,19 @@
 | :-- | :-- | :-- |
 | 需求与设计文档 | ✅ 完成 | PRD V2.0 + 架构规格 + 任务清单 + 验收用例 + 接口定义 + ADR |
 | `security_core`（加密核心） | ✅ 完成 | Argon2id / AES-256-GCM / 分层密钥 / 包裹 / 恢复 |
-| `vault_store`（数据层） | ✅ 完成 | SQLite + 字段级加密 + 卡片 CRUD/检索/审计 + 智能导入 + **防爆破锁定 + 加密备份** |
-| `vault_web`（PC 验证界面） | ✅ 完成 | 解锁/检索/增删/二次验证/审计 + 提示词 + 恢复码轮换 + 智能导入 + 剪贴板策略 + **备份/迁移** |
+| `vault_store`（数据层） | ✅ 完成 | SQLite + 字段级加密 + 卡片 CRUD/检索/审计 + 智能导入 + **防爆破锁定 + 加密备份 + 回收站（软删除/恢复）** |
+| `vault_web`（PC 验证界面） | ✅ 完成 | 解锁/检索/增删/**批量删除**/二次验证/审计 + 提示词 + 恢复码轮换 + 智能导入 + 剪贴板策略 + **备份/迁移 + 回收站（防误删）** |
 | `vault_cli`（离线运维） | ✅ 完成 | 批量导入 / 列表 / 导出与恢复备份 / 改密 / 删除 / **恢复密钥重置** |
-| `vault_ffi`（移动端桥接） | ✅ 完成 | 11 个 C ABI 符号；**Miri Level 1–4 验证无 UB** |
-| `recovery_service`（找回服务） | ✅ 完成 | 零知识：仅存不可逆哈希 + 加密包裹；**SQLite 持久化（重启不丢绑定）**；一次性验证码/令牌 + 限流；事件日志与健康检查；已接入网页端：邮箱绑定 + 验证码找回闭环 + **真实 SMTP 投递**（经 curl，兼容 QQ/163/Gmail 授权码；授权码仅从文件读取、不进 argv、发完即删） |
-| 移动端 App（Flutter + 原生） | ⬜ 未开始 | 需 Flutter / Android SDK / Xcode 工具链 |
+| `vault_ffi`（移动端桥接） | ✅ 完成 | 11 个 C ABI 符号；**Miri Level 1–4 验证无 UB**；鸿蒙交叉编译 PoC 通过 |
+| `vault_jni`（Android 桥接） | 🔶 架构/脚手架 | JNI 桥接到 vault_store；见 docs/12 双端架构 |
+| `recovery_service`（找回服务） | ✅ 完成 | 零知识：仅存不可逆哈希 + 加密包裹；**SQLite 持久化（重启不丢绑定）**；一次性验证码/令牌 + 限流；事件日志与健康检查；**默认启用鉴权**；已接入网页端：邮箱绑定 + 验证码找回闭环 + **真实 SMTP 投递**（经 curl，兼容 QQ/163/Gmail 授权码；授权码仅从文件读取、不进 argv、发完即删） |
+| **T4.6 安全审计** | ✅ 完成 | 5 人并行团队审计 19 项；修复 **DNS rebinding/CSRF、找回绑定劫持** 2 个真实可利用漏洞 + 8 低危项 |
+| 移动端 App（Android APK + HarmonyOS NEXT） | 🔶 架构已定 | 双端架构见 docs/12；核心 Rust + C ABI 可复用；需 Android SDK / DevEco 工具链 |
 | 服务端（可选找回通道） | ⬜ 未开始 | 零知识设计已就绪（docs/04） |
 
-**测试**：**150+ 项全绿**（含「凭证字段无明文」「备份无明文」「20 次输错后数据完好」等红线断言）。
-**CI**：GitHub Actions 四项检查（fmt / clippy `-D warnings` / test / **Miri**）。
-**任务进度**：Phase 1 基本完成；Phase 2 全部完成（含找回服务）；Phase 3 之 T3.6（加密备份）完成；Phase 4 之审计与 PIPL 完成。
+**测试**：**190+ 项全绿**（含「凭证字段无明文」「备份无明文」「20 次输错后数据完好」「回收站软删/恢复」等红线断言）。
+**CI**：GitHub Actions 多项检查（fmt / clippy `-D warnings` / test / Miri / 冒烟测试）。
+**任务进度**：Phase 1 基本完成；Phase 2 全部完成（含找回服务）；Phase 3 之 T3.6（加密备份）完成；Phase 4 之**审计与安全加固（T4.6）**、PIPL 完成；移动端双端架构设计完成（docs/12）。
 
 ---
 
@@ -38,17 +40,15 @@ FuxiPass/
 ├── Cargo.toml                    # workspace
 ├── reference.md                  # PRD V2.0（安全加固版）
 ├── reference.orig.md             # PRD V1.0 原稿（存档）
-├── docs/                         # 需求 / 架构 / 任务 / 用例 / 接口 / ADR
-├── security_core/                # 加密核心库
-│   ├── src/  cipher · kdf · keys · wrap · seal · vault · bytes · error
-│   ├── tests/                    # 端到端验收测试
-│   └── examples/vault_demo.rs
-├── vault_store/                  # 数据层（SQLite + 字段级加密 + Repository）
-│   ├── src/  schema · models · vault · accounts · audit
-│   └── tests/integration.rs
-└── vault_web/                    # PC 端本地 Web 验证界面
-    ├── src/  main · api · state · middleware · index.html
-    └── (仅监听 127.0.0.1)
+├── docs/                         # 01-12：架构/任务/用例/接口/ADR/使用/开发/移动端
+├── scripts/                      # 开发环境就绪检查（check-dev-ready.sh）
+├── security_core/                # 加密核心库（Argon2id/AES-256-GCM/密钥体系）
+├── vault_store/                  # 数据层（SQLite + 字段级加密 + 回收站 + 找回套件）
+├── vault_web/                    # PC 端本地 Web 验证界面（仅监听 127.0.0.1）
+├── vault_cli/                    # 离线运维 CLI（导入/备份/改密/恢复）
+├── vault_ffi/                    # 移动端 C ABI 桥接（11 符号，Miri 验证）
+├── recovery_service/             # 零知识找回服务（鉴权 + 真实 SMTP 投递）
+└── mobile/vault_jni/             # Android JNI 桥接（双端架构的 APK 路径）
 ```
 
 ---
@@ -117,6 +117,8 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | **剪贴板策略** | 复制后 30 秒自动清空；高敏感字段复制前强警示 |
 | **智能导入** | 粘贴 QQ 记事本/备忘录文本 → 自动解析 → 可编辑预览 → 二次验证后批量入库 |
 | 新增 / 编辑 / 删除 | 完整卡片 CRUD |
+| **回收站（防误删）** | 删除不立即清除，进入回收站（软删除 → 保留高敏感字段）；可恢复 / 永久删除 / 清空 |
+| **批量删除** | 列表勾选 → 一键批量删除（移入回收站） |
 | 审计日志 | 记录操作与字段类别，**不含任何明文** |
 | **防爆破锁定** | 连续输错 5 次锁 5 分钟并指数退避至 30 分钟上限；界面显示倒计时；**绝不删除数据** |
 | **备份 / 迁移** | 导出为口令加密文件（无明文）；新机器一键导入恢复 |
@@ -175,9 +177,10 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | Phase | 内容 | 状态 |
 | :-- | :-- | :-- |
 | **P1** 安全底座 | 密钥体系、加密核心、存储与 CRUD、提示词/恢复码、剪贴板 | ✅ PC 端完成 |
-| **P2** 分级鉴权 / 找回 / 导入 | 二次验证、防爆破、邮箱短信找回、文本解析 | ✅ 全部完成（找回服务已实现并通过端到端验证） |
+| **P2** 分级鉴权 / 找回 / 导入 | 二次验证、防爆破、邮箱短信找回、文本解析 | ✅ 全部完成（找回服务端到端验证 + 真实 SMTP 投递） |
 | **P3** 抓取与系统集成 | 登录页抓取、AutoFill、加密备份导出恢复 | 🔶 **加密备份已完成**；抓取/AutoFill 需移动端 |
-| **P4** 加固与审计 | 防截图、剪贴板强化、审计日志、PIPL 合规 | 🔶 审计查询/导出 + PIPL 数据权利已完成；防截图需移动端 |
+| **P4** 加固与审计 | 防截图、剪贴板强化、审计日志、PIPL、**安全审计** | 🔶 审计查询/导出 + PIPL + **T4.6 安全审计（已修复 2 真实漏洞 + 8 低危）** 完成；防截图需移动端 |
+| **移动端**（Android APK + HarmonyOS NEXT） | 双端架构、Rust 核心桥接、UI 壳 | 🔶 **架构设计完成（docs/12）**；工具链就绪后开发桥接与 UI |
 
 ---
 
