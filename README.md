@@ -168,6 +168,7 @@ cargo run -p vault_web -- --db ./fuxipass.vault.db --port 8787
 | **在 macOS 上开发与维护** | [`docs/10-macOS-开发与维护.md`](docs/10-macOS-开发与维护.md) |
 | **HarmonyOS 交叉编译 PoC** | [`docs/11-鸿蒙交叉编译PoC.md`](docs/11-鸿蒙交叉编译PoC.md) |
 | **移动端双端架构**（Android APK + NEXT 原生） | [`docs/12-移动端双端架构.md`](docs/12-移动端双端架构.md) |
+| **完成度清单与验证 CheckList** | [`docs/13-完成度清单与验证清单.md`](docs/13-完成度清单与验证清单.md) |
 | 日常使用（绑定/找回/备份） | [`docs/09-使用指南.md`](docs/09-使用指南.md) |
 
 ---
